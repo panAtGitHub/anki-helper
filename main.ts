@@ -1,134 +1,240 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+// Obsidian Plugin – Anki Helper
+// Implements:
+// 1. Under every H4 heading (####) insert a backlink to the heading
+// 2. Remove specific characters (` < >) inside H4 heading text itself
+// 3. Check and insert TARGET DECK section below YAML or before first heading
+// 4. Delete empty trailing list items (ordered & unordered)
+// 5. Ensure one blank line containing a single space between a list and the following paragraph
+// Trigger: runs only via default hotkey Ctrl+S (Windows/Linux/macOS）
 
-// Remember to rename these classes and interfaces!
+import { App, Plugin, PluginSettingTab, Setting, MarkdownView, TFile, Notice } from "obsidian";
 
-interface MyPluginSettings {
-	mySetting: string;
+/* ✨ 新增：通用工具函数 —— 返回 YAML 结束后的第一行下标 */
+function findYamlEnd(lines: string[]): number {
+  if (lines[0] === '---') {
+    const end = lines.indexOf('---', 1);
+    return end >= 0 ? end + 1 : 0;    // 若未闭合也视作 0
+  }
+  return 0;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+/** Settings */
+interface AnkiHelperSettings {
+  headingLevel: number; // default 4 (####)
+  targetDeckTemplate: string; // e.g. '[[anki背诵]]::[[filename]]'
 }
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+const DEFAULT_SETTINGS: AnkiHelperSettings = {
+  headingLevel: 4,
+  targetDeckTemplate: "[[anki背诵]]::[[filename]]"
+};
 
-	async onload() {
-		await this.loadSettings();
+export default class AnkiHelperPlugin extends Plugin {
+  settings!: AnkiHelperSettings;
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+  async onload(): Promise<void> {
+    await this.loadSettings();
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+    this.addCommand({
+      id: "anki-helper-run",
+      name: "Run Anki Helper on current file",
+      callback: () => {
+        const file = this.getActiveFile();
+        if (file) this.processFile(file);
+      },
+      hotkeys: [{ modifiers: ["Ctrl"], key: "s" }]
+    });
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+    this.addSettingTab(new AnkiHelperSettingTab(this.app, this));
+  }
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
+  onunload(): void {}
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+  private async processFile(file: TFile): Promise<void> {
+    const raw = await this.app.vault.read(file);
+    const lines = raw.split(/\r?\n/);
+    let changed = false;
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
+    changed = this.ensureTargetDeck(lines, file) || changed;
+    changed = this.rewriteHeadingsAndCollectLists(lines, file) || changed;
+    changed = this.tidyLists(lines) || changed;
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+    if (changed) await this.app.vault.modify(file, lines.join("\n"));
+  }
+
+	private ensureTargetDeck(lines: string[], file: TFile): boolean {
+	const marker = "TARGET DECK";
+	if (lines.some((l) => l.includes(marker))) return false;
+
+	let idx = 0;                                   // 默认插入位置
+	if (lines[0] === "---") {
+		const end = lines.indexOf("---", 1);
+		if (end > 0) idx = end + 1;                  // YAML 结束行的下一行
+	} else {
+		const fh = lines.findIndex((l) => l.trim().startsWith("#"));
+		if (fh >= 0) idx = fh;
 	}
 
-	onunload() {
+	const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
 
+	// ⚡️ 关键：如果紧贴 YAML 尾部，就先插一个空行
+	if (idx > 0 && lines[idx - 1] === "---") {
+		lines.splice(idx, 0, "");                    // prepend blank line
+		idx++;                                       // 调整下标，保持后续顺序
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	lines.splice(idx, 0, marker, tpl, "");         // 原有逻辑保持
+	return true;
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
+
+  private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
+    let changed = false;
+    const hPrefix = "#".repeat(this.settings.headingLevel) + " ";
+    const noteName = file.basename;
+	const start = findYamlEnd(lines);           // ← 从 YAML 之后开始
+
+    for (let i = start; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.startsWith(hPrefix)) continue;
+
+      const rawHeading = line.slice(hPrefix.length);
+      const cleanHeading = rawHeading.replace(/[`<>]+/g, "").trim();
+      if (rawHeading !== cleanHeading) {
+        lines[i] = hPrefix + cleanHeading;
+        changed = true;
+      }
+
+      const backlink = `[[${noteName}#${cleanHeading}]]`;
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === "") j++;
+      if (j >= lines.length) {
+        lines.push(backlink);
+        changed = true;
+      } else if (!/^\[\[.*?#.*?\]\]$/.test(lines[j].trim())) {
+        lines.splice(j, 0, backlink);
+        changed = true;
+      } else if (lines[j].trim() !== backlink) {
+        lines[j] = backlink;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+	private tidyLists(lines: string[]): boolean {
+	let changed = false;
+
+	const isList      = (l: string) => /^(\s*)([-+*]|\d+\.)\s*/.test(l);      // 无序或有序列表
+	const isEmptyItem = (l: string) => /^(\s*)([-+*]|\d+\.)\s*$/.test(l);     // 空列表项
+	const isBlankLine = (l: string) => /^\s*$/.test(l);                       // 纯空白
+	const isHtmlCmt   = (l: string) => /^\s*<!--.*-->/.test(l);               // HTML 注释
+
+	const start = findYamlEnd(lines);
+	for (let i = start; i < lines.length; i++) {
+		if (!isList(lines[i])) continue;
+
+		// 找到当前列表块的末尾行号 end
+		let end = i;
+		while (end + 1 < lines.length && isList(lines[end + 1])) end++;
+
+		/* ---------- 1️⃣ 删除列表中的所有空项 ---------- */
+		for (let j = end; j >= i; j--) {           // 倒序删，避免索引错位
+		if (isEmptyItem(lines[j])) {
+			lines.splice(j, 1);
+			changed = true;
+			end--;                                 // 删除后列表块向上收缩
+		}
+		}
+
+		/* ---------- 2️⃣ 处理列表块尾部与下一段落的间距 ---------- */
+		const nextLine = lines[end + 1];
+		if (nextLine !== undefined) {
+		const needSpace =
+			!isBlankLine(nextLine) &&              // 下一行不是空行
+			!isList(nextLine) &&                   // 也不是另一个列表
+			!isHtmlCmt(nextLine);                  // 且不是 HTML 注释
+
+		if (needSpace) {
+			lines.splice(end + 1, 0, " ");         // 插入仅含空格的占位行
+			changed = true;
+		}
+		// 如果下一行是注释或本身已有空行，则保持现状
+		}
+
+		// 跳过已处理完的列表块
+		i = end;
 	}
+
+	return changed;
+	}
+
+
+  private getActiveFile(): TFile | null {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    return view?.file ?? null;
+  }
+
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+class AnkiHelperSettingTab extends PluginSettingTab {
+  plugin: AnkiHelperPlugin;
+  constructor(app: App, plugin: AnkiHelperPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "Anki Helper Settings" });
+    // 插件使用教程
+    containerEl.createEl("p", { text: "使用说明：在文件中，按 Ctrl+S（可修改快捷键）即可执行卡片生成前的清理操作。" });
+    containerEl.createEl("ul", {});
+    containerEl.createEl("li", { text: "1. 清理「问题」标题中的特殊字符，并插入标题级回链。" });
+    containerEl.createEl("li", { text: "2. 在文件开头生成 TARGET DECK （建议加入父牌组）。" });
+    containerEl.createEl("li", { text: "3. 清理空的列表，并在列表和段落间添加空行。" });
+	// Custom Regexp 推荐语法
+    containerEl.createEl("h2", { text: "Custom Regexp 推荐语法" });
+	containerEl.createEl("pre", { text: "^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)" });
+    containerEl.createEl("button", { text: "复制以上语法的正则表达式" }, (btn) => {
+      btn.addEventListener("click", () => {
+        navigator.clipboard.writeText("^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)");
+        new Notice("正则已复制，请填到Obsidian_to_Anki插件的Custom Regexp表达式里");
+      });
+    });
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
+    new Setting(containerEl)
+      .setName("Heading Level（「问题」所在标题）")
+      .setDesc("Heading level to process #### (默认4级标题)")
+      .addSlider((slider) => {
+        slider
+          .setLimits(1, 6, 1)
+          .setValue(this.plugin.settings.headingLevel)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.headingLevel = value;
+            await this.plugin.saveSettings();
+          });
+      });
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const {containerEl} = this;
-
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
-	}
+    new Setting(containerEl)
+      .setName("Target Deck Template（Target Deck模板）")
+      .setDesc("Template for TARGET DECK default line, use 'filename' placeholder")
+      .addText((text) =>
+        text
+          .setPlaceholder("[[anki背诵]]::[[filename]]")
+          .setValue(this.plugin.settings.targetDeckTemplate)
+          .onChange(async (value) => {
+            this.plugin.settings.targetDeckTemplate = value.trim() || "[[anki背诵]]::[[filename]]";
+            await this.plugin.saveSettings();
+          })
+      );
+  }
 }
