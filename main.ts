@@ -22,12 +22,18 @@ function findYamlEnd(lines: string[]): number {
 interface AnkiHelperSettings {
   headingLevel: number; // default 4 (####)
   targetDeckTemplate: string; // e.g. '[[anki背诵]]::[[filename]]'
+  enableTargetDeck: boolean;            // 启用 TARGET DECK 自动插入，增加开关
+  enableHeadingOps: boolean;            // 启用 标题清理 + 标题级回链，增加开关
+  enableListTidy: boolean;              // 启用 列表清理，增加开关
 }
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
   headingLevel: 4,
-  targetDeckTemplate: "[[anki背诵]]::[[filename]]"
-};
+  targetDeckTemplate: "[[anki背诵]]::[[filename]]",
+  enableTargetDeck: true,
+  enableHeadingOps: true,
+  enableListTidy: true,
+}
 
 export default class AnkiHelperPlugin extends Plugin {
   settings!: AnkiHelperSettings;
@@ -55,12 +61,19 @@ export default class AnkiHelperPlugin extends Plugin {
     const lines = raw.split(/\r?\n/);
     let changed = false;
 
-    changed = this.ensureTargetDeck(lines, file) || changed;
-    changed = this.rewriteHeadingsAndCollectLists(lines, file) || changed;
-    changed = this.tidyLists(lines) || changed;
+    if (this.settings.enableTargetDeck) {
+      changed = this.ensureTargetDeck(lines, file) || changed;
+    }
+    if (this.settings.enableHeadingOps) {
+      changed = this.rewriteHeadingsAndCollectLists(lines, file) || changed;
+    }
+    if (this.settings.enableListTidy) {
+      changed = this.tidyLists(lines) || changed;
+    }
 
     if (changed) await this.app.vault.modify(file, lines.join("\n"));
   }
+
 
 	private ensureTargetDeck(lines: string[], file: TFile): boolean {
 	const marker = "TARGET DECK";
@@ -200,33 +213,67 @@ class AnkiHelperSettingTab extends PluginSettingTab {
     containerEl.createEl("li", { text: "1. 清理「问题」标题中的特殊字符，并插入标题级回链。" });
     containerEl.createEl("li", { text: "2. 在文件开头生成 TARGET DECK （建议加入父牌组）。" });
     containerEl.createEl("li", { text: "3. 清理空的列表，并在列表和段落间添加空行。" });
-	// Custom Regexp 推荐语法
-    containerEl.createEl("h2", { text: "Custom Regexp 推荐语法" });
-	containerEl.createEl("pre", { text: "^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)" });
+
+	  // Custom Regexp 推荐语法
+    // containerEl.createEl("h2", { text: "Custom Regexp 推荐语法" });
+	  // containerEl.createEl("pre", { text: "^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)" });
+    // containerEl.createEl("button", { text: "复制以上语法的正则表达式" }, (btn) => {
+    //   btn.addEventListener("click", () => {
+    //     navigator.clipboard.writeText("^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)");
+    //     new Notice("正则已复制，请填到Obsidian_to_Anki插件的Custom Regexp表达式里");
+    //   });
+    // });
+
+    // —— 标题级别设置 + Custom Regexp 推荐语法（联动） —— //
+    const getPattern = (x: number) =>
+      `^#{${x}}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
+    let codeEl: HTMLElement | null = null;
+    const updateRecommendedRegexp = () => {
+      if (!codeEl) return;
+      codeEl.setText(getPattern(this.plugin.settings.headingLevel));
+    };
+
+    // ① 标题级别下拉（1–6），默认 4
+    new Setting(containerEl)
+      .setName("用于卡片问题的标题级别")
+      .setDesc("默认 4（####）。选择 1–6 级，影响下方推荐正则以及处理逻辑。")
+      .addDropdown(d => {
+        d.addOptions({ "1": "#", "2": "##", "3": "###", "4": "####", "5": "#####", "6": "######" })
+        .setValue(String(this.plugin.settings.headingLevel))
+        .onChange(async (v) => {
+          this.plugin.settings.headingLevel = Number(v);
+          await this.plugin.saveSettings();
+          updateRecommendedRegexp();   // 联动更新推荐语法
+        });
+      });
+
+     // ② 推荐语法展示 + 复制按钮（随 x 联动）
+    containerEl.createEl("p", { text: "Custom Regexp 推荐语法" });
+    const pre = containerEl.createEl("pre");
+    codeEl = pre.createEl("code");
+    updateRecommendedRegexp();
     containerEl.createEl("button", { text: "复制以上语法的正则表达式" }, (btn) => {
       btn.addEventListener("click", () => {
-        navigator.clipboard.writeText("^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)");
-        new Notice("正则已复制，请填到Obsidian_to_Anki插件的Custom Regexp表达式里");
+        navigator.clipboard.writeText(codeEl!.textContent ?? "");
+        new Notice("正则已复制，请填到 Obsidian_to_Anki 的 Custom Regexp 里");
       });
     });
 
+    // —— 功能开关 —— //
     new Setting(containerEl)
-      .setName("Heading Level（「问题」所在标题）")
-      .setDesc("Heading level to process #### (默认4级标题)")
-      .addSlider((slider) => {
-        slider
-          .setLimits(1, 6, 1)
-          .setValue(this.plugin.settings.headingLevel)
-          .setDynamicTooltip()
-          .onChange(async (value) => {
-            this.plugin.settings.headingLevel = value;
-            await this.plugin.saveSettings();
-          });
-      });
+      .setName("启用 TARGET DECK 自动插入")
+      .setDesc("在文档开头（或首个标题前）插入 “TARGET DECK + 模板行”。")
+      .addToggle(t => t
+        .setValue(this.plugin.settings.enableTargetDeck)
+        .onChange(async (v) => {
+          this.plugin.settings.enableTargetDeck = v;
+          await this.plugin.saveSettings();
+        })
+      );
 
     new Setting(containerEl)
-      .setName("Target Deck Template（Target Deck模板）")
-      .setDesc("Template for TARGET DECK default line, use 'filename' placeholder")
+      .setName("Target Deck 模板")
+      .setDesc("建议加入父牌组")
       .addText((text) =>
         text
           .setPlaceholder("[[anki背诵]]::[[filename]]")
@@ -236,5 +283,28 @@ class AnkiHelperSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+      
+    new Setting(containerEl)
+      .setName("启用 标题清理 + 标题级回链")
+      .setDesc("清理「问题标题」中的特殊字符，并在该标题下插入 [[Note#Heading]] 回链。")
+      .addToggle(t => t
+        .setValue(this.plugin.settings.enableHeadingOps)
+        .onChange(async (v) => {
+          this.plugin.settings.enableHeadingOps = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("启用 列表清理")
+      .setDesc("删除空的列表项；并在列表与后续段落间自动留一空行（不含 HTML 注释）。")
+      .addToggle(t => t
+        .setValue(this.plugin.settings.enableListTidy)
+        .onChange(async (v) => {
+          this.plugin.settings.enableListTidy = v;
+          await this.plugin.saveSettings();
+        })
+      );
+
   }
 }
