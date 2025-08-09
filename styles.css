@@ -1,8 +1,41 @@
-/*
+/* Anki Helper – Settings Cards */
+.ah-card {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 16px 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,.04);
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.ah-card-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: #9973F2;
+  font-size: large;
+}
 
-If your plugin does not need CSS, delete this file.
+.ah-card-desc {
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
 
-*/
+.ah-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.ah-actions > button {
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ah-code {
+  white-space: pre-wrap;    /* 小屏不溢出 */
+  user-select: text;
+}

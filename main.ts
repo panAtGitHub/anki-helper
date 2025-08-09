@@ -204,107 +204,115 @@ class AnkiHelperSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
   display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl("h2", { text: "Anki Helper Settings" });
-    // 插件使用教程
-    containerEl.createEl("p", { text: "使用说明：在文件中，按 Ctrl+S（可修改快捷键）即可执行卡片生成前的清理操作。" });
-    containerEl.createEl("ul", {});
-    containerEl.createEl("li", { text: "1. 清理「问题」标题中的特殊字符，并插入标题级回链。" });
-    containerEl.createEl("li", { text: "2. 在文件开头生成 TARGET DECK （建议加入父牌组）。" });
-    containerEl.createEl("li", { text: "3. 清理空的列表，并在列表和段落间添加空行。" });
+  const { containerEl } = this;
+  containerEl.empty();
 
-	  // Custom Regexp 推荐语法
-    // containerEl.createEl("h2", { text: "Custom Regexp 推荐语法" });
-	  // containerEl.createEl("pre", { text: "^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)" });
-    // containerEl.createEl("button", { text: "复制以上语法的正则表达式" }, (btn) => {
-    //   btn.addEventListener("click", () => {
-    //     navigator.clipboard.writeText("^#{4}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)");
-    //     new Notice("正则已复制，请填到Obsidian_to_Anki插件的Custom Regexp表达式里");
-    //   });
-    // });
+  // 标题
+  containerEl.createEl("h2", { text: "Anki Helper Settings" });
 
-    // —— 标题级别设置 + Custom Regexp 推荐语法（联动） —— //
-    const getPattern = (x: number) =>
-      `^#{${x}}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
-    let codeEl: HTMLElement | null = null;
-    const updateRecommendedRegexp = () => {
-      if (!codeEl) return;
-      codeEl.setText(getPattern(this.plugin.settings.headingLevel));
-    };
+  // 工具函数：生成“推荐正则”
+  const getPattern = (x: number) =>
+    `^#{${x}}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
 
-    // ① 标题级别下拉（1–6），默认 4
-    new Setting(containerEl)
-      .setName("用于卡片问题的标题级别")
-      .setDesc("默认 4（####）。选择 1–6 级，影响下方推荐正则以及处理逻辑。")
-      .addDropdown(d => {
-        d.addOptions({ "1": "#", "2": "##", "3": "###", "4": "####", "5": "#####", "6": "######" })
+  // ===== 卡片 1：问题标题设置 =====
+  const cardHeading = containerEl.createDiv({ cls: "ah-card" });
+  cardHeading.createEl("div", { cls: "ah-card-title", text: "一，确定做卡片用的「问题」所在的标题级别" });
+  cardHeading.createEl("div", {
+    cls: "ah-card-desc",
+    text: "默认为四级标题（####）。可以在下行选择 1～6 级，且“Custom Regexp语法”会自动联动。"
+  });
+
+  // 下拉：1..6
+  new Setting(cardHeading)
+    .setName("请选择「问题」所在的标题级别：（默认为四级标题）")
+    .setDesc("注：可点击下方的「复制正则表达式语法」按钮，并粘贴到 obsidian_to_anki插件 的“Custom Regexp”中。")
+    .addDropdown(d => {
+      d.addOptions({ "1": "#", "2": "##", "3": "###", "4": "####", "5": "#####", "6": "######" })
         .setValue(String(this.plugin.settings.headingLevel))
         .onChange(async (v) => {
           this.plugin.settings.headingLevel = Number(v);
           await this.plugin.saveSettings();
-          updateRecommendedRegexp();   // 联动更新推荐语法
+          updateRecommendedRegexp();
         });
-      });
-
-     // ② 推荐语法展示 + 复制按钮（随 x 联动）
-    containerEl.createEl("p", { text: "Custom Regexp 推荐语法" });
-    const pre = containerEl.createEl("pre");
-    codeEl = pre.createEl("code");
-    updateRecommendedRegexp();
-    containerEl.createEl("button", { text: "复制以上语法的正则表达式" }, (btn) => {
-      btn.addEventListener("click", () => {
-        navigator.clipboard.writeText(codeEl!.textContent ?? "");
-        new Notice("正则已复制，请填到 Obsidian_to_Anki 的 Custom Regexp 里");
-      });
     });
 
-    // —— 功能开关 —— //
-    new Setting(containerEl)
-      .setName("启用 TARGET DECK 自动插入")
-      .setDesc("在文档开头（或首个标题前）插入 “TARGET DECK + 模板行”。")
-      .addToggle(t => t
-        .setValue(this.plugin.settings.enableTargetDeck)
-        .onChange(async (v) => {
-          this.plugin.settings.enableTargetDeck = v;
+  // 推荐正则 + 复制
+  const pre = cardHeading.createEl("pre", { cls: "ah-code" });
+  const codeEl = pre.createEl("code");
+  const actions = cardHeading.createDiv({ cls: "ah-actions" });
+  const copyBtn = actions.createEl("button", { text: "复制正则表达式语法" });
+  const updateRecommendedRegexp = () => {
+    codeEl.setText(getPattern(this.plugin.settings.headingLevel));
+  };
+  updateRecommendedRegexp();
+  copyBtn.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(codeEl.textContent ?? "");
+    new Notice("已复制到剪贴板");
+  });
+
+  // ===== 卡片 2：TARGET DECK =====
+  const cardDeck = containerEl.createDiv({ cls: "ah-card" });
+  cardDeck.createEl("div", { cls: "ah-card-title", text: "二，加入 TARGET DECK" });
+  cardDeck.createEl("div", { cls: "ah-card-desc", text: "建议加入父牌组，示例：[[anki背诵]]::[[filename]]。（备注：filename即md本身的文件名称，会自动生成）" });
+
+  new Setting(cardDeck)
+    .setName("启用 TARGET DECK 自动插入")
+    .setDesc("注：在文首（或 YAML 后）插入 “TARGET DECK + 牌组名”，这样方便在anki中定位")
+    .addToggle(t => t
+      .setValue(this.plugin.settings.enableTargetDeck)
+      .onChange(async (v) => {
+        this.plugin.settings.enableTargetDeck = v;
+        await this.plugin.saveSettings();
+      })
+    );
+
+  new Setting(cardDeck)
+    .setName("TARGET DECK 模板")
+    // .setDesc("[[anki背诵]]为父牌组，可按自己使用习惯进行替换,[[filename]] 为当前笔记名，可自动生成子牌组名称")
+    .setDesc(createFragment(frag => {
+      frag.createEl("div", { text: "[[anki背诵]]为父牌组，可按自己使用习惯进行替换" });
+      frag.createEl("div", { text: "[[filename]] 为当前笔记名，可自动生成子牌组名称" });
+    }))
+
+    .addText((text) =>
+      text
+        .setPlaceholder("[[anki背诵]]::[[filename]]")
+        .setValue(this.plugin.settings.targetDeckTemplate)
+        .onChange(async (value) => {
+          this.plugin.settings.targetDeckTemplate = value.trim() || "[[anki背诵]]::[[filename]]";
           await this.plugin.saveSettings();
         })
-      );
+    );
 
-    new Setting(containerEl)
-      .setName("Target Deck 模板")
-      .setDesc("建议加入父牌组")
-      .addText((text) =>
-        text
-          .setPlaceholder("[[anki背诵]]::[[filename]]")
-          .setValue(this.plugin.settings.targetDeckTemplate)
-          .onChange(async (value) => {
-            this.plugin.settings.targetDeckTemplate = value.trim() || "[[anki背诵]]::[[filename]]";
-            await this.plugin.saveSettings();
-          })
-      );
-      
-    new Setting(containerEl)
-      .setName("启用 标题清理 + 标题级回链")
-      .setDesc("清理「问题标题」中的特殊字符，并在该标题下插入 [[Note#Heading]] 回链。")
-      .addToggle(t => t
-        .setValue(this.plugin.settings.enableHeadingOps)
-        .onChange(async (v) => {
-          this.plugin.settings.enableHeadingOps = v;
-          await this.plugin.saveSettings();
-        })
-      );
+  // ===== 卡片 3：清理与排版 =====
+  const cardCleanup = containerEl.createDiv({ cls: "ah-card" });
+  cardCleanup.createEl("div", { cls: "ah-card-title", text: "三，清理与排版" });
+  cardCleanup.createEl("div", {
+    cls: "ah-card-desc",
+    text: "清理「问题标题」中的特殊字符并插入回链；删除空列表项；列表与段落间自动插空行。"
+  });
 
-    new Setting(containerEl)
-      .setName("启用 列表清理")
-      .setDesc("删除空的列表项；并在列表与后续段落间自动留一空行（不含 HTML 注释）。")
-      .addToggle(t => t
-        .setValue(this.plugin.settings.enableListTidy)
-        .onChange(async (v) => {
-          this.plugin.settings.enableListTidy = v;
-          await this.plugin.saveSettings();
-        })
-      );
+  new Setting(cardCleanup)
+    .setName("启用：标题清理 + 标题级回链 功能")
+    .setDesc("注：清理标题特殊字符后，将不影响[[ ]]的生成。同时插入类似 [[Note#Heading]] 的回链，以方便在anki复习时直接跳到对应的卡片中。")
+    .addToggle(t => t
+      .setValue(this.plugin.settings.enableHeadingOps)
+      .onChange(async (v) => {
+        this.plugin.settings.enableHeadingOps = v;
+        await this.plugin.saveSettings();
+      })
+    );
 
-  }
+  new Setting(cardCleanup)
+    .setName("启用：列表与段落间自动留空行功能")
+    .setDesc("注：在列表与后续段落间自动留一空行，这样在anki中显示会更美观。")
+    .addToggle(t => t
+      .setValue(this.plugin.settings.enableListTidy)
+      .onChange(async (v) => {
+        this.plugin.settings.enableListTidy = v;
+        await this.plugin.saveSettings();
+      })
+    );
+}
+
 }
