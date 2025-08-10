@@ -3,7 +3,7 @@
 	"name": "Anki Helper",
 	"version": "0.2.0",
 	"minAppVersion": "1.5.0",
-	"description": "Standardizes Anki card display in Obsidian, for seamless integration with the expand_to_anki plugin.",
+	"description": "Standardizes Anki card display for seamless integration with the expand_to_anki plugin.",
 	"author": "Dusk",
 	"isDesktopOnly": true
 }
