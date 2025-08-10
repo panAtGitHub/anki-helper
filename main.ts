@@ -5,7 +5,7 @@
 // 3. Check and insert TARGET DECK section below YAML or before first heading
 // 4. Delete empty trailing list items (ordered & unordered)
 // 5. Ensure one blank line containing a single space between a list and the following paragraph
-// Trigger: runs only via default hotkey Ctrl+S (Windows/Linux/macOS）
+// Trigger: run via Command Palette or a user-assigned hotkey
 
 import { App, Plugin, PluginSettingTab, Setting, MarkdownView, TFile, Notice } from "obsidian";
 
@@ -43,12 +43,11 @@ export default class AnkiHelperPlugin extends Plugin {
 
     this.addCommand({
       id: "anki-helper-run",
-      name: "Run Anki Helper on current file",
+      name: "Run on current file for Anki（在当前文件运行命令）",
       callback: () => {
         const file = this.getActiveFile();
         if (file) this.processFile(file);
-      },
-      hotkeys: [{ modifiers: ["Ctrl"], key: "s" }]
+      }
     });
 
     this.addSettingTab(new AnkiHelperSettingTab(this.app, this));
