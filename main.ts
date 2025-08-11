@@ -33,7 +33,9 @@ interface AnkiHelperSettings {
   enableTargetDeck: boolean;            // 启用 TARGET DECK 自动插入，增加开关
   enableHeadingOps: boolean;            // 启用 标题清理 + 标题级回链，增加开关
   enableListTidy: boolean;              // 启用 列表清理，增加开关
-  excludeGlobs: string[];               // 指定需要跳过的文件（glob 模式）
+  runScope: "all" | "include" | "exclude"; // 运行范围模式
+  includePaths: string[];               // 仅在这些文件夹/文件执行
+  excludePaths: string[];               // 排除的文件夹/文件
 }
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
@@ -42,11 +44,14 @@ const DEFAULT_SETTINGS: AnkiHelperSettings = {
   enableTargetDeck: true,
   enableHeadingOps: true,
   enableListTidy: true,
-  excludeGlobs: [],
+  runScope: "all",
+  includePaths: [],
+  excludePaths: [],
 }
 
 export default class AnkiHelperPlugin extends Plugin {
   settings!: AnkiHelperSettings;
+  private includePatterns: RegExp[] = [];
   private excludePatterns: RegExp[] = [];
 
   async onload(): Promise<void> {
@@ -67,8 +72,8 @@ export default class AnkiHelperPlugin extends Plugin {
   onunload(): void {}
 
   private async processFile(file: TFile): Promise<void> {
-    if (this.isExcluded(file)) {
-      new Notice("Anki Helper: skipped excluded file");
+    if (!this.isInScope(file)) {
+      new Notice("Anki Helper: skipped (out of scope)");
       return;
     }
 
@@ -89,9 +94,15 @@ export default class AnkiHelperPlugin extends Plugin {
     if (changed) await this.app.vault.modify(file, lines.join("\n"));
   }
 
-  private isExcluded(file: TFile): boolean {
+  private isInScope(file: TFile): boolean {
     const path = file.path;
-    return this.excludePatterns.some(r => r.test(path));
+    if (this.settings.runScope === "include") {
+      return this.includePatterns.some(r => r.test(path));
+    }
+    if (this.settings.runScope === "exclude") {
+      return !this.excludePatterns.some(r => r.test(path));
+    }
+    return true; // all
   }
   private ensureTargetDeck(lines: string[], file: TFile): boolean {
     const marker = "TARGET DECK";
@@ -202,15 +213,17 @@ export default class AnkiHelperPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-    this.updateExcludePatterns();
+    this.updateScopePatterns();
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
   }
 
-  updateExcludePatterns() {
-    this.excludePatterns = this.settings.excludeGlobs.map(globToRegExp);
+  updateScopePatterns() {
+    const toGlob = (p: string) => p.endsWith('/') ? p + '**' : p;
+    this.includePatterns = this.settings.includePaths.map(p => globToRegExp(toGlob(p)));
+    this.excludePatterns = this.settings.excludePaths.map(p => globToRegExp(toGlob(p)));
   }
 }
 
@@ -331,27 +344,67 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       })
     );
 
-  // ===== 卡片 4：排除文件 =====
-  const cardExclude = containerEl.createDiv({ cls: "ah-card" });
-  cardExclude.createEl("div", { cls: "ah-card-title", text: "四，排除文件" });
-  cardExclude.createEl("div", {
+  // ===== 卡片 4：作用范围 =====
+  const cardScope = containerEl.createDiv({ cls: "ah-card" });
+  cardScope.createEl("div", { cls: "ah-card-title", text: "四，作用范围" });
+  cardScope.createEl("div", {
     cls: "ah-card-desc",
-    text: "每行一个 Glob 模式，匹配的文件将不会执行本插件。"
+    text: "选择插件在哪些路径生效。",
   });
 
-  const excludeSetting = new Setting(cardExclude)
-    .setName("排除模式")
-    .setDesc("示例：**/*.excalidraw.md 或 3R-Templates/**");
-  const textarea = excludeSetting.controlEl.createEl("textarea");
-  textarea.setAttr("rows", 4);
-  textarea.value = this.plugin.settings.excludeGlobs.join("\n");
-  textarea.addEventListener("change", async () => {
-    this.plugin.settings.excludeGlobs = textarea.value.split(/\n+/)
+  const scopeSetting = new Setting(cardScope)
+    .setName("运行范围")
+    .setDesc("选择插件处理哪些文件")
+    .addDropdown(d => {
+      d.addOptions({
+        all: "全部文件",
+        include: "仅在指定文件夹",
+        exclude: "排除指定路径",
+      })
+        .setValue(this.plugin.settings.runScope)
+        .onChange(async (v) => {
+          this.plugin.settings.runScope = v as any;
+          await this.plugin.saveSettings();
+          toggleAreas();
+        });
+    });
+
+  const includeSetting = new Setting(cardScope)
+    .setName("仅在以下文件夹生效")
+    .setDesc("输入为相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
+  const includeArea = includeSetting.controlEl.createEl("textarea");
+  includeArea.setAttr("rows", 4);
+  includeArea.setAttr("placeholder", "例：\nNotes/Anki/\nInbox/Todo.md");
+  includeArea.value = this.plugin.settings.includePaths.join("\n");
+  includeArea.addEventListener("change", async () => {
+    this.plugin.settings.includePaths = includeArea.value.split(/\n+/)
       .map(s => s.trim())
       .filter(Boolean);
     await this.plugin.saveSettings();
-    this.plugin.updateExcludePatterns();
+    this.plugin.updateScopePatterns();
   });
+
+  const excludeSetting = new Setting(cardScope)
+    .setName("排除以下路径")
+    .setDesc("输入为相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
+  const excludeArea = excludeSetting.controlEl.createEl("textarea");
+  excludeArea.setAttr("rows", 4);
+  excludeArea.setAttr("placeholder", "例：\nNotes/Anki/\nInbox/Todo.md");
+  excludeArea.value = this.plugin.settings.excludePaths.join("\n");
+  excludeArea.addEventListener("change", async () => {
+    this.plugin.settings.excludePaths = excludeArea.value.split(/\n+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    await this.plugin.saveSettings();
+    this.plugin.updateScopePatterns();
+  });
+
+  const toggleAreas = () => {
+    includeSetting.settingEl.toggle(this.plugin.settings.runScope === "include");
+    excludeSetting.settingEl.toggle(this.plugin.settings.runScope === "exclude");
+  };
+  toggleAreas();
 }
 
 }
+
