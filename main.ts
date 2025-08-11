@@ -18,6 +18,14 @@ function findYamlEnd(lines: string[]): number {
   return 0;
 }
 
+// 将简单的 glob 表达式转换为 RegExp
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const withPlaceholders = escaped.replace(/\*\*/g, "§§");
+  const single = withPlaceholders.replace(/\*/g, "[^/]*");
+  return new RegExp("^" + single.replace(/§§/g, ".*") + "$");
+}
+
 /** Settings */
 interface AnkiHelperSettings {
   headingLevel: number; // default 4 (####)
@@ -25,6 +33,9 @@ interface AnkiHelperSettings {
   enableTargetDeck: boolean;            // 启用 TARGET DECK 自动插入，增加开关
   enableHeadingOps: boolean;            // 启用 标题清理 + 标题级回链，增加开关
   enableListTidy: boolean;              // 启用 列表清理，增加开关
+  runScope: "all" | "include" | "exclude"; // 运行范围模式
+  includePaths: string[];               // 仅在这些文件夹/文件执行
+  excludePaths: string[];               // 排除的文件夹/文件
 }
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
@@ -33,10 +44,15 @@ const DEFAULT_SETTINGS: AnkiHelperSettings = {
   enableTargetDeck: true,
   enableHeadingOps: true,
   enableListTidy: true,
+  runScope: "all",
+  includePaths: [],
+  excludePaths: [],
 }
 
 export default class AnkiHelperPlugin extends Plugin {
   settings!: AnkiHelperSettings;
+  private includePatterns: RegExp[] = [];
+  private excludePatterns: RegExp[] = [];
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -56,6 +72,11 @@ export default class AnkiHelperPlugin extends Plugin {
   onunload(): void {}
 
   private async processFile(file: TFile): Promise<void> {
+    if (!this.isInScope(file)) {
+      new Notice("Anki Helper: skipped (out of scope)");
+      return;
+    }
+
     const raw = await this.app.vault.read(file);
     const lines = raw.split(/\r?\n/);
     let changed = false;
@@ -73,31 +94,34 @@ export default class AnkiHelperPlugin extends Plugin {
     if (changed) await this.app.vault.modify(file, lines.join("\n"));
   }
 
+  private isInScope(file: TFile): boolean {
+    const path = file.path;
+    if (this.settings.runScope === "include") {
+      return this.includePatterns.some(r => r.test(path));
+    }
+    if (this.settings.runScope === "exclude") {
+      return !this.excludePatterns.some(r => r.test(path));
+    }
+    return true; // all
+  }
+  private ensureTargetDeck(lines: string[], file: TFile): boolean {
+    const marker = "TARGET DECK";
+    if (lines.some((l) => l.includes(marker))) return false;
 
-	private ensureTargetDeck(lines: string[], file: TFile): boolean {
-	const marker = "TARGET DECK";
-	if (lines.some((l) => l.includes(marker))) return false;
+    let idx = findYamlEnd(lines);
+    if (idx === 0) {
+      const fh = lines.findIndex((l) => l.trim().startsWith("#"));
+      if (fh >= 0) idx = fh;
+    }
 
-	let idx = 0;                                   // 默认插入位置
-	if (lines[0] === "---") {
-		const end = lines.indexOf("---", 1);
-		if (end > 0) idx = end + 1;                  // YAML 结束行的下一行
-	} else {
-		const fh = lines.findIndex((l) => l.trim().startsWith("#"));
-		if (fh >= 0) idx = fh;
-	}
-
-	const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
-
-	// ⚡️ 关键：如果紧贴 YAML 尾部，就先插一个空行
-	if (idx > 0 && lines[idx - 1] === "---") {
-		lines.splice(idx, 0, "");                    // prepend blank line
-		idx++;                                       // 调整下标，保持后续顺序
-	}
-
-	lines.splice(idx, 0, marker, tpl, "");         // 原有逻辑保持
-	return true;
-	}
+    const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
+    if (idx > 0 && lines[idx - 1] === "---") {
+      lines.splice(idx, 0, "");
+      idx++;
+    }
+    lines.splice(idx, 0, marker, tpl, "");
+    return true;
+  }
 
 
   private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
@@ -189,10 +213,17 @@ export default class AnkiHelperPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.updateScopePatterns();
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  updateScopePatterns() {
+    const toGlob = (p: string) => p.endsWith('/') ? p + '**' : p;
+    this.includePatterns = this.settings.includePaths.map(p => globToRegExp(toGlob(p)));
+    this.excludePatterns = this.settings.excludePaths.map(p => globToRegExp(toGlob(p)));
   }
 }
 
@@ -312,6 +343,68 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+
+  // ===== 卡片 4：作用范围 =====
+  const cardScope = containerEl.createDiv({ cls: "ah-card" });
+  cardScope.createEl("div", { cls: "ah-card-title", text: "四，作用范围" });
+  cardScope.createEl("div", {
+    cls: "ah-card-desc",
+    text: "选择插件在哪些路径生效。",
+  });
+
+  const scopeSetting = new Setting(cardScope)
+    .setName("运行范围")
+    .setDesc("选择插件处理哪些文件")
+    .addDropdown(d => {
+      d.addOptions({
+        all: "全部文件",
+        include: "仅在指定文件夹",
+        exclude: "排除指定路径",
+      })
+        .setValue(this.plugin.settings.runScope)
+        .onChange(async (v) => {
+          this.plugin.settings.runScope = v as any;
+          await this.plugin.saveSettings();
+          toggleAreas();
+        });
+    });
+
+  const includeSetting = new Setting(cardScope)
+    .setName("仅在以下文件夹生效")
+    .setDesc("输入为相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
+  const includeArea = includeSetting.controlEl.createEl("textarea");
+  includeArea.setAttr("rows", 4);
+  includeArea.setAttr("placeholder", "例：\nNotes/Anki/\nInbox/Todo.md");
+  includeArea.value = this.plugin.settings.includePaths.join("\n");
+  includeArea.addEventListener("change", async () => {
+    this.plugin.settings.includePaths = includeArea.value.split(/\n+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    await this.plugin.saveSettings();
+    this.plugin.updateScopePatterns();
+  });
+
+  const excludeSetting = new Setting(cardScope)
+    .setName("排除以下路径")
+    .setDesc("输入为相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
+  const excludeArea = excludeSetting.controlEl.createEl("textarea");
+  excludeArea.setAttr("rows", 4);
+  excludeArea.setAttr("placeholder", "例：\nNotes/Anki/\nInbox/Todo.md");
+  excludeArea.value = this.plugin.settings.excludePaths.join("\n");
+  excludeArea.addEventListener("change", async () => {
+    this.plugin.settings.excludePaths = excludeArea.value.split(/\n+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    await this.plugin.saveSettings();
+    this.plugin.updateScopePatterns();
+  });
+
+  const toggleAreas = () => {
+    includeSetting.settingEl.toggle(this.plugin.settings.runScope === "include");
+    excludeSetting.settingEl.toggle(this.plugin.settings.runScope === "exclude");
+  };
+  toggleAreas();
 }
 
 }
+
