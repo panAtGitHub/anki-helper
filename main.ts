@@ -47,6 +47,7 @@ const DEFAULT_SETTINGS: AnkiHelperSettings = {
 
 export default class AnkiHelperPlugin extends Plugin {
   settings!: AnkiHelperSettings;
+  private excludePatterns: RegExp[] = [];
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -90,34 +91,26 @@ export default class AnkiHelperPlugin extends Plugin {
 
   private isExcluded(file: TFile): boolean {
     const path = file.path;
-    return this.settings.excludeGlobs.some(g => globToRegExp(g).test(path));
+    return this.excludePatterns.some(r => r.test(path));
   }
+  private ensureTargetDeck(lines: string[], file: TFile): boolean {
+    const marker = "TARGET DECK";
+    if (lines.some((l) => l.includes(marker))) return false;
 
+    let idx = findYamlEnd(lines);
+    if (idx === 0) {
+      const fh = lines.findIndex((l) => l.trim().startsWith("#"));
+      if (fh >= 0) idx = fh;
+    }
 
-	private ensureTargetDeck(lines: string[], file: TFile): boolean {
-	const marker = "TARGET DECK";
-	if (lines.some((l) => l.includes(marker))) return false;
-
-	let idx = 0;                                   // 默认插入位置
-	if (lines[0] === "---") {
-		const end = lines.indexOf("---", 1);
-		if (end > 0) idx = end + 1;                  // YAML 结束行的下一行
-	} else {
-		const fh = lines.findIndex((l) => l.trim().startsWith("#"));
-		if (fh >= 0) idx = fh;
-	}
-
-	const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
-
-	// ⚡️ 关键：如果紧贴 YAML 尾部，就先插一个空行
-	if (idx > 0 && lines[idx - 1] === "---") {
-		lines.splice(idx, 0, "");                    // prepend blank line
-		idx++;                                       // 调整下标，保持后续顺序
-	}
-
-	lines.splice(idx, 0, marker, tpl, "");         // 原有逻辑保持
-	return true;
-	}
+    const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
+    if (idx > 0 && lines[idx - 1] === "---") {
+      lines.splice(idx, 0, "");
+      idx++;
+    }
+    lines.splice(idx, 0, marker, tpl, "");
+    return true;
+  }
 
 
   private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
@@ -209,10 +202,15 @@ export default class AnkiHelperPlugin extends Plugin {
 
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.updateExcludePatterns();
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  updateExcludePatterns() {
+    this.excludePatterns = this.settings.excludeGlobs.map(globToRegExp);
   }
 }
 
@@ -352,6 +350,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       .map(s => s.trim())
       .filter(Boolean);
     await this.plugin.saveSettings();
+    this.plugin.updateExcludePatterns();
   });
 }
 

@@ -20,3 +20,11 @@ After running it, you get:
 2. A **“heading-level backlink”** inserted right under every H4 question, letting you jump straight to that section in Obsidian while reviewing in Anki.
 3. Small character-level clean-ups on both headings and content, yielding tidier cards when processed by obsidian\_to\_Anki.
 4. Ability to skip files matching user-provided glob patterns.
+
+## 排除模式示例 / Exclusion demo
+
+运行 `node scripts/exclude-demo.js` 可以快速验证某个文件是否会被排除；
+示例脚本会输出每个路径是 "excluded" 还是 "processed"。
+
+Run `node scripts/exclude-demo.js` to see which sample paths match the configured
+globs and would be skipped by the plugin.
