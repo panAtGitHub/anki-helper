@@ -18,6 +18,14 @@ function findYamlEnd(lines: string[]): number {
   return 0;
 }
 
+// 将简单的 glob 表达式转换为 RegExp
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const withPlaceholders = escaped.replace(/\*\*/g, "§§");
+  const single = withPlaceholders.replace(/\*/g, "[^/]*");
+  return new RegExp("^" + single.replace(/§§/g, ".*") + "$");
+}
+
 /** Settings */
 interface AnkiHelperSettings {
   headingLevel: number; // default 4 (####)
@@ -25,6 +33,7 @@ interface AnkiHelperSettings {
   enableTargetDeck: boolean;            // 启用 TARGET DECK 自动插入，增加开关
   enableHeadingOps: boolean;            // 启用 标题清理 + 标题级回链，增加开关
   enableListTidy: boolean;              // 启用 列表清理，增加开关
+  excludeGlobs: string[];               // 指定需要跳过的文件（glob 模式）
 }
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
@@ -33,6 +42,7 @@ const DEFAULT_SETTINGS: AnkiHelperSettings = {
   enableTargetDeck: true,
   enableHeadingOps: true,
   enableListTidy: true,
+  excludeGlobs: [],
 }
 
 export default class AnkiHelperPlugin extends Plugin {
@@ -56,6 +66,11 @@ export default class AnkiHelperPlugin extends Plugin {
   onunload(): void {}
 
   private async processFile(file: TFile): Promise<void> {
+    if (this.isExcluded(file)) {
+      new Notice("Anki Helper: skipped excluded file");
+      return;
+    }
+
     const raw = await this.app.vault.read(file);
     const lines = raw.split(/\r?\n/);
     let changed = false;
@@ -71,6 +86,11 @@ export default class AnkiHelperPlugin extends Plugin {
     }
 
     if (changed) await this.app.vault.modify(file, lines.join("\n"));
+  }
+
+  private isExcluded(file: TFile): boolean {
+    const path = file.path;
+    return this.settings.excludeGlobs.some(g => globToRegExp(g).test(path));
   }
 
 
@@ -312,6 +332,27 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+
+  // ===== 卡片 4：排除文件 =====
+  const cardExclude = containerEl.createDiv({ cls: "ah-card" });
+  cardExclude.createEl("div", { cls: "ah-card-title", text: "四，排除文件" });
+  cardExclude.createEl("div", {
+    cls: "ah-card-desc",
+    text: "每行一个 Glob 模式，匹配的文件将不会执行本插件。"
+  });
+
+  const excludeSetting = new Setting(cardExclude)
+    .setName("排除模式")
+    .setDesc("示例：**/*.excalidraw.md 或 3R-Templates/**");
+  const textarea = excludeSetting.controlEl.createEl("textarea");
+  textarea.setAttr("rows", 4);
+  textarea.value = this.plugin.settings.excludeGlobs.join("\n");
+  textarea.addEventListener("change", async () => {
+    this.plugin.settings.excludeGlobs = textarea.value.split(/\n+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    await this.plugin.saveSettings();
+  });
 }
 
 }
