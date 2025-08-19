@@ -1,7 +1,7 @@
 // Obsidian Plugin – Anki Helper
 // Implements:
 // 1. Under every H4 heading (####) insert a backlink to the heading
-// 2. Remove specific characters (` < >) inside H4 heading text itself
+// 2. Remove configurable characters inside H4 heading text itself
 // 3. Check and insert TARGET DECK section below YAML or before first heading
 // 4. Delete empty trailing list items (ordered & unordered)
 // 5. Ensure one blank line containing a single space between a list and the following paragraph
@@ -29,6 +29,7 @@ function globToRegExp(pattern: string): RegExp {
 /** Settings */
 interface AnkiHelperSettings {
   headingLevel: number; // default 4 (####)
+  headingRemovePattern: string;       // regex pattern for characters to remove in headings
   targetDeckTemplate: string; // e.g. '[[anki背诵]]::[[filename]]'
   enableTargetDeck: boolean;            // 启用 TARGET DECK 自动插入，增加开关
   enableHeadingOps: boolean;            // 启用 标题清理 + 标题级回链，增加开关
@@ -40,6 +41,7 @@ interface AnkiHelperSettings {
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
   headingLevel: 4,
+  headingRemovePattern: "[`<>\\[\\]]+",
   targetDeckTemplate: "[[anki背诵]]::[[filename]]",
   enableTargetDeck: true,
   enableHeadingOps: true,
@@ -128,14 +130,21 @@ export default class AnkiHelperPlugin extends Plugin {
     let changed = false;
     const hPrefix = "#".repeat(this.settings.headingLevel) + " ";
     const noteName = file.basename;
-	const start = findYamlEnd(lines);           // ← 从 YAML 之后开始
+    const start = findYamlEnd(lines);           // ← 从 YAML 之后开始
+
+    let removeRegex: RegExp;
+    try {
+      removeRegex = new RegExp(this.settings.headingRemovePattern, "g");
+    } catch {
+      removeRegex = /[`<>\[\]]+/g;
+    }
 
     for (let i = start; i < lines.length; i++) {
       const line = lines[i];
       if (!line.startsWith(hPrefix)) continue;
 
       const rawHeading = line.slice(hPrefix.length);
-      const cleanHeading = rawHeading.replace(/[`<>]+/g, "").trim();
+      const cleanHeading = rawHeading.replace(removeRegex, "").trim();
       if (rawHeading !== cleanHeading) {
         lines[i] = hPrefix + cleanHeading;
         changed = true;
@@ -319,7 +328,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
   cardCleanup.createEl("div", { cls: "ah-card-title", text: "三，清理与排版" });
   cardCleanup.createEl("div", {
     cls: "ah-card-desc",
-    text: "清理「问题标题」中的特殊字符并插入回链；删除空列表项；列表与段落间自动插空行。"
+    text: "清理「问题标题」中的特殊字符（可自定义）并插入回链；删除空列表项；列表与段落间自动插空行。"
   });
 
   new Setting(cardCleanup)
@@ -331,6 +340,19 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         this.plugin.settings.enableHeadingOps = v;
         await this.plugin.saveSettings();
       })
+    );
+
+  new Setting(cardCleanup)
+    .setName("标题中要删除的字符")
+    .setDesc("输入要从标题中移除的字符，支持正则表达式。默认移除反引号、尖括号与方括号。")
+    .addText(text =>
+      text
+        .setPlaceholder("[`<>\\[\\]]+")
+        .setValue(this.plugin.settings.headingRemovePattern)
+        .onChange(async (value) => {
+          this.plugin.settings.headingRemovePattern = value.trim() || "[`<>\\[\\]]+";
+          await this.plugin.saveSettings();
+        })
     );
 
   new Setting(cardCleanup)
