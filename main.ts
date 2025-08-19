@@ -26,10 +26,14 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp("^" + single.replace(/§§/g, ".*") + "$");
 }
 
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /** Settings */
 interface AnkiHelperSettings {
   headingLevel: number; // default 4 (####)
-  headingRemovePattern: string;       // regex pattern for characters to remove in headings
+  headingRemoveChars: string;       // space-separated chars to remove from headings
   targetDeckTemplate: string; // e.g. '[[anki背诵]]::[[filename]]'
   enableTargetDeck: boolean;            // 启用 TARGET DECK 自动插入，增加开关
   enableHeadingOps: boolean;            // 启用 标题清理 + 标题级回链，增加开关
@@ -41,7 +45,7 @@ interface AnkiHelperSettings {
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
   headingLevel: 4,
-  headingRemovePattern: "[`<>\\[\\]]+",
+  headingRemoveChars: "` < > [ ]",
   targetDeckTemplate: "[[anki背诵]]::[[filename]]",
   enableTargetDeck: true,
   enableHeadingOps: true,
@@ -132,12 +136,10 @@ export default class AnkiHelperPlugin extends Plugin {
     const noteName = file.basename;
     const start = findYamlEnd(lines);           // ← 从 YAML 之后开始
 
-    let removeRegex: RegExp;
-    try {
-      removeRegex = new RegExp(this.settings.headingRemovePattern, "g");
-    } catch {
-      removeRegex = /[`<>\[\]]+/g;
-    }
+    const rawChars = this.settings.headingRemoveChars.trim() || "` < > [ ]";
+    const tokens = rawChars.split(/\s+/).filter(Boolean);
+    const pattern = tokens.length ? tokens.map(escapeRegExp).join("|") : "`|<|>|\\[|\\]";
+    const removeRegex = new RegExp(pattern, "g");
 
     for (let i = start; i < lines.length; i++) {
       const line = lines[i];
@@ -346,13 +348,13 @@ class AnkiHelperSettingTab extends PluginSettingTab {
 
   charSetting = new Setting(cardCleanup)
     .setName("标题中要删除的字符")
-    .setDesc("输入要从标题中移除的字符，支持正则表达式。默认移除反引号、尖括号与方括号。")
+    .setDesc("输入要从标题中移除的字符，以空格分隔。默认移除：` < > [ ]")
     .addText(text =>
       text
-        .setPlaceholder("[`<>\\[\\]]+")
-        .setValue(this.plugin.settings.headingRemovePattern)
+        .setPlaceholder("` < > [ ]")
+        .setValue(this.plugin.settings.headingRemoveChars)
         .onChange(async (value) => {
-          this.plugin.settings.headingRemovePattern = value.trim() || "[`<>\\[\\]]+";
+          this.plugin.settings.headingRemoveChars = value.trim() || "` < > [ ]";
           await this.plugin.saveSettings();
         })
     );
