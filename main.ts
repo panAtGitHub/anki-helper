@@ -331,6 +331,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
     text: "清理「问题标题」中的特殊字符（可自定义）并插入回链；删除空列表项；列表与段落间自动插空行。"
   });
 
+  let charSetting: Setting;
   new Setting(cardCleanup)
     .setName("启用：标题清理 + 标题级回链 功能")
     .setDesc("注：清理标题特殊字符后，将不影响[[ ]]的生成。同时插入类似 [[Note#Heading]] 的回链，以方便在anki复习时直接跳到对应的卡片中。")
@@ -338,11 +339,12 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       .setValue(this.plugin.settings.enableHeadingOps)
       .onChange(async (v) => {
         this.plugin.settings.enableHeadingOps = v;
+        charSetting.setDisabled(!v);
         await this.plugin.saveSettings();
       })
     );
 
-  new Setting(cardCleanup)
+  charSetting = new Setting(cardCleanup)
     .setName("标题中要删除的字符")
     .setDesc("输入要从标题中移除的字符，支持正则表达式。默认移除反引号、尖括号与方括号。")
     .addText(text =>
@@ -354,6 +356,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
     );
+  charSetting.setDisabled(!this.plugin.settings.enableHeadingOps);
 
   new Setting(cardCleanup)
     .setName("启用：列表与段落间自动留空行功能")
