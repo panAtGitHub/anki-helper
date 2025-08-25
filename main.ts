@@ -150,12 +150,58 @@ export default class AnkiHelperPlugin extends Plugin {
   }
 
 
+  // private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
+  //   let changed = false;
+  //   const hPrefix = "#".repeat(this.settings.headingLevel) + " ";
+  //   const noteName = file.basename;
+  //   const start = findYamlEnd(lines);           // ← 从 YAML 之后开始
+
+  //   const rawChars = this.settings.headingRemoveChars.trim() || "` < > [ ]";
+  //   const tokens = rawChars.split(/\s+/).filter(Boolean);
+  //   const pattern = tokens.length ? tokens.map(escapeRegExp).join("|") : "`|<|>|\\[|\\]";
+  //   const removeRegex = new RegExp(pattern, "g");
+
+  //   for (let i = start; i < lines.length; i++) {
+  //     const line = lines[i];
+  //     if (!line.startsWith(hPrefix)) continue;
+
+  //     const rawHeading = line.slice(hPrefix.length);
+  //     const cleanHeading = rawHeading.replace(removeRegex, "").trim();
+  //     if (rawHeading !== cleanHeading) {
+  //       lines[i] = hPrefix + cleanHeading;
+  //       changed = true;
+  //     }
+
+  //     const backlink = `[[${noteName}#${cleanHeading}]]`;
+  //     let j = i + 1;
+  //     while (j < lines.length && lines[j].trim() === "") j++;
+  //     if (j >= lines.length) {
+  //       lines.push(backlink);
+  //       changed = true;
+  //     } else if (!/^\[\[.*?#.*?\]\]$/.test(lines[j].trim())) {
+  //       lines.splice(j, 0, backlink);
+  //       changed = true;
+  //     } else if (lines[j].trim() !== backlink) {
+  //       lines[j] = backlink;
+  //       changed = true;
+  //     }
+  //   }
+  //   return changed;
+  // }
+
+
   private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
     let changed = false;
-    const hPrefix = "#".repeat(this.settings.headingLevel) + " ";
+    const qaLvl = this.settings.headingLevel ?? 4;          // 问答题标题级别
+    const clozeLvl = this.settings.clozeHeadingLevel ?? 5;  // 填空题标题级别
+    const prefixes = new Set<string>([
+      "#".repeat(qaLvl) + " ",
+      "#".repeat(clozeLvl) + " ",
+    ]);
     const noteName = file.basename;
-    const start = findYamlEnd(lines);           // ← 从 YAML 之后开始
+    const start = findYamlEnd(lines); // 从 YAML 之后开始
 
+    // 标题清理字符
     const rawChars = this.settings.headingRemoveChars.trim() || "` < > [ ]";
     const tokens = rawChars.split(/\s+/).filter(Boolean);
     const pattern = tokens.length ? tokens.map(escapeRegExp).join("|") : "`|<|>|\\[|\\]";
@@ -163,8 +209,15 @@ export default class AnkiHelperPlugin extends Plugin {
 
     for (let i = start; i < lines.length; i++) {
       const line = lines[i];
-      if (!line.startsWith(hPrefix)) continue;
 
+      // 命中两类标题之一
+      let hPrefix: string | null = null;
+      for (const p of prefixes) {
+        if (line.startsWith(p)) { hPrefix = p; break; }
+      }
+      if (!hPrefix) continue;
+
+      // ① 清理标题字符
       const rawHeading = line.slice(hPrefix.length);
       const cleanHeading = rawHeading.replace(removeRegex, "").trim();
       if (rawHeading !== cleanHeading) {
@@ -172,9 +225,10 @@ export default class AnkiHelperPlugin extends Plugin {
         changed = true;
       }
 
+      // ② 插入/更新紧随其后的回链 [[Note#Heading]]
       const backlink = `[[${noteName}#${cleanHeading}]]`;
       let j = i + 1;
-      while (j < lines.length && lines[j].trim() === "") j++;
+      while (j < lines.length && lines[j].trim() === "") j++; // 跳过空行
       if (j >= lines.length) {
         lines.push(backlink);
         changed = true;
@@ -188,6 +242,7 @@ export default class AnkiHelperPlugin extends Plugin {
     }
     return changed;
   }
+
 
 	private tidyLists(lines: string[]): boolean {
 	let changed = false;
@@ -251,7 +306,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return text.replace(this.buildClozeMarkerRegex(), (_m, inner) => `{{c1::${inner}}}`);
   }
 
-  // 顺序模式：以 "#####" 开头的标题为块起点，直到严格空行（完全为空，不含空格）为止；块内编号从 1 开始
+  // 顺序模式：以 "#####" 开头的标题为块起点，改成从前面读取数据，直到严格空行（完全为空，不含空格）为止；块内编号从 1 开始
   private clozeConvertSeq(text: string): string {
     const lines = text.split("\n");
     const lvl = this.settings.clozeHeadingLevel ?? 5;    //改成从前面读取数据
