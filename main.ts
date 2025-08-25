@@ -32,7 +32,8 @@ function escapeRegExp(str: string): string {
 
 /** Settings */
 interface AnkiHelperSettings {
-  headingLevel: number; // default 4 (####)
+  headingLevel: number; // default 4 (####)，这是问答题
+  clozeHeadingLevel: number; // 填空题卡片用的“问题”标题级别，默认5（#####）
   headingRemoveChars: string;       // space-separated chars to remove from headings
   targetDeckTemplate: string; // e.g. '[[anki背诵]]::[[filename]]'
   enableTargetDeck: boolean;            // 启用 TARGET DECK 自动插入，增加开关
@@ -47,6 +48,7 @@ interface AnkiHelperSettings {
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
   headingLevel: 4,
+  clozeHeadingLevel: 5,
   headingRemoveChars: "` < > [ ]",
   targetDeckTemplate: "[[anki背诵]]::[[filename]]",
   enableTargetDeck: true,
@@ -252,7 +254,8 @@ export default class AnkiHelperPlugin extends Plugin {
   // 顺序模式：以 "#####" 开头的标题为块起点，直到严格空行（完全为空，不含空格）为止；块内编号从 1 开始
   private clozeConvertSeq(text: string): string {
     const lines = text.split("\n");
-    const headingRe = /^#{5}\s+/;
+    const lvl = this.settings.clozeHeadingLevel ?? 5;    //改成从前面读取数据
+    const headingRe = new RegExp(`^#{${lvl}}\\s+`);      //改成从前面读取数据
     const isStrictBlank = (s: string) => s === "";
 
     let i = 0;
@@ -369,6 +372,65 @@ class AnkiHelperSettingTab extends PluginSettingTab {
     await navigator.clipboard.writeText(codeEl.textContent ?? "");
     new Notice("已复制到剪贴板");
   });
+
+  //以下为新的填充题卡片
+  // 生成“填空题卡片”推荐正则：^#{L}\s(.+\n*(?:\n(?:^[^\n#].{0,2}$|^[^\n#].{3}(?<!<!--).*))+)
+  const getClozePattern = (x: number) =>
+    `^#{${x}}\\s(.+\\n*(?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
+
+  // === 一点二：填空题卡片的“问题”标题级别 ===
+  const getClozePatternQ = (x: number) =>
+    `^#{${x}}\\s(.+\\n*(?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
+
+  const cardClozeHeading = containerEl.createDiv({ cls: "ah-card" });
+  cardClozeHeading.createEl("div", {
+    cls: "ah-card-title",
+    text: "一点二，确定做「填空题卡片」用的「问题」所在的标题级别",
+  });
+  cardClozeHeading.createEl("div", {
+    cls: "ah-card-desc",
+    text:
+      "默认为五级标题（#####）。可以在下行选择 1～6 级，且“Custom Regexp语法”会自动联动。注意不要与「问答题卡片」所在标题级别相同，否则插件会读取有误。",
+  });
+
+  let lastClozeLvl = this.plugin.settings.clozeHeadingLevel ?? 5;
+  new Setting(cardClozeHeading)
+    .setName("请选择「问题」所在的标题级别：（默认为五级标题）")
+    .setDesc("注：可点击下方的「复制正则表达式语法」按钮，并粘贴到 obsidian_to_anki 插件的“Custom Regexp”中。")
+    .addDropdown((d) => {
+      d.addOptions({ "1": "#", "2": "##", "3": "###", "4": "####", "5": "#####", "6": "######" })
+        .setValue(String(lastClozeLvl))
+        .onChange(async (v) => {
+          const lvl = Number(v);
+          if (lvl === this.plugin.settings.headingLevel) {
+            new Notice("与「问答题卡片」级别相同，会导致读取错误。请更换级别。");
+            d.setValue(String(lastClozeLvl));
+            return;
+          }
+          this.plugin.settings.clozeHeadingLevel = lvl;
+          lastClozeLvl = lvl;
+          await this.plugin.saveSettings();
+          updateClozeRegexpQ();
+        });
+    });
+
+  const preClozeQ = cardClozeHeading.createEl("pre", { cls: "ah-code" });
+  const codeClozeQ = preClozeQ.createEl("code");
+  const actionsClozeQ = cardClozeHeading.createDiv({ cls: "ah-actions" });
+  const copyClozeQ = actionsClozeQ.createEl("button", { text: "复制正则表达式语法" });
+
+  const updateClozeRegexpQ = () => {
+    codeClozeQ.setText(getClozePatternQ(this.plugin.settings.clozeHeadingLevel ?? 5));
+  };
+  updateClozeRegexpQ();
+
+  copyClozeQ.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(codeClozeQ.textContent ?? "");
+    new Notice("已复制到剪贴板");
+  });
+
+
+
 
   // ===== 卡片 2：TARGET DECK =====
   const cardDeck = containerEl.createDiv({ cls: "ah-card" });
