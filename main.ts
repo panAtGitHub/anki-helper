@@ -41,6 +41,8 @@ interface AnkiHelperSettings {
   runScope: "all" | "include" | "exclude"; // 运行范围模式
   includePaths: string[];               // 仅在这些文件夹/文件执行
   excludePaths: string[];               // 排除的文件夹/文件
+  clozeMarker?: string;                // 对称标记，如 "=="，2025-08-25新增
+
 }
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
@@ -53,6 +55,7 @@ const DEFAULT_SETTINGS: AnkiHelperSettings = {
   runScope: "all",
   includePaths: [],
   excludePaths: [],
+  clozeMarker: "==",
 }
 
 export default class AnkiHelperPlugin extends Plugin {
@@ -70,6 +73,21 @@ export default class AnkiHelperPlugin extends Plugin {
         const file = this.getActiveFile();
         if (file) this.processFile(file);
       }
+    });
+    this.addCommand({
+      id: "anki-helper-cloze-one",
+      name: "Cloze: Convert markers → {{c1::…}} (one-shot)",
+      editorCallback: () => this.runClozeConvert("one"),
+    });
+    this.addCommand({
+      id: "anki-helper-cloze-seq",
+      name: "Cloze: Convert markers → {{c1::…}}, {{c2::…}}… (scoped by ##### block)",
+      editorCallback: () => this.runClozeConvert("seq"),
+    });
+    this.addCommand({
+      id: "anki-helper-cloze-restore",
+      name: "Cloze: Restore {{cN::…}} → markers",
+      editorCallback: () => this.runClozeRestore(),
     });
 
     this.addSettingTab(new AnkiHelperSettingTab(this.app, this));
@@ -222,6 +240,67 @@ export default class AnkiHelperPlugin extends Plugin {
     return view?.file ?? null;
   }
 
+  private buildClozeMarkerRegex(): RegExp {
+    const m = escapeRegExp(this.settings.clozeMarker || "==");
+    return new RegExp(`${m}([\\s\\S]*?)${m}`, "g"); // 非贪婪，允许跨行
+  }
+
+  private clozeConvertOne(text: string): string {
+    return text.replace(this.buildClozeMarkerRegex(), (_m, inner) => `{{c1::${inner}}}`);
+  }
+
+  // 顺序模式：以 "#####" 开头的标题为块起点，直到严格空行（完全为空，不含空格）为止；块内编号从 1 开始
+  private clozeConvertSeq(text: string): string {
+    const lines = text.split("\n");
+    const headingRe = /^#{5}\s+/;
+    const isStrictBlank = (s: string) => s === "";
+
+    let i = 0;
+    while (i < lines.length) {
+      if (!headingRe.test(lines[i])) { i++; continue; }
+
+      const startLine = i + 1;
+      let j = startLine;
+      while (j < lines.length && !isStrictBlank(lines[j])) j++;
+
+      const block = lines.slice(startLine, j).join("\n");
+      let idx = 1;
+      const replaced = block.replace(this.buildClozeMarkerRegex(), (_m, inner) => `{{c${idx++}::${inner}}}`);
+      lines.splice(startLine, j - startLine, ...replaced.split("\n"));
+      i = startLine + replaced.split("\n").length;
+    }
+    return lines.join("\n");
+  }
+
+  private runClozeConvert(mode: "one" | "seq") {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) { new Notice("No active Markdown view."); return; }
+    const editor = view.editor;
+
+    const src = editor.getSelection() || editor.getValue();
+    const out = mode === "one" ? this.clozeConvertOne(src) : this.clozeConvertSeq(src);
+    if (editor.somethingSelected()) editor.replaceSelection(out);
+    else editor.setValue(out);
+  }
+
+  private clozeRestore(text: string): string {
+    const marker = this.settings.clozeMarker || "==";
+    return text.replace(/\{\{c\d+::([\s\S]*?)\}\}/g, (_m, inner) => `${marker}${inner}${marker}`);
+  }
+
+  private runClozeRestore() {
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (!view) { new Notice("No active Markdown view."); return; }
+    const editor = view.editor;
+
+    const src = editor.getSelection() || editor.getValue();
+    const out = this.clozeRestore(src);
+    if (editor.somethingSelected()) editor.replaceSelection(out);
+    else editor.setValue(out);
+  }
+
+
+
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
     this.updateScopePatterns();
@@ -249,7 +328,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
   containerEl.empty();
 
   // 标题
-  containerEl.createEl("h2", { text: "Anki Helper Settings" });
+  containerEl.createEl("h1", { text: "Anki Helper Settings" });
 
   // 工具函数：生成“推荐正则”
   const getPattern = (x: number) =>
@@ -371,9 +450,26 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       })
     );
 
-  // ===== 卡片 4：作用范围 =====
+  // ===== 卡片 4：Cloze填空题卡片转换 =====
+  const cardCloze = containerEl.createDiv({ cls: "ah-card" });
+  cardCloze.createEl("div", { cls: "ah-card-title", text: "四，Cloze填空题卡片转换" });
+  cardCloze.createEl("div", { cls: "ah-card-desc", text: "对称包裹的标记，例如 == / ** / $$ 等。用于识别并转换为 {{cN::…}} 或从 {{cN::…}} 还原。" });
+
+  new Setting(cardCloze)
+    .setName("Marker挖空标记（对称）")
+    .setDesc("起止标记一致，默认 ==")
+    .addText(t => t
+      .setPlaceholder("==")
+      .setValue(this.plugin.settings.clozeMarker || "==")
+      .onChange(async v => {
+        this.plugin.settings.clozeMarker = v || "==";
+        await this.plugin.saveSettings();
+      })
+    );
+
+  // ===== 卡片 5：作用范围 =====
   const cardScope = containerEl.createDiv({ cls: "ah-card" });
-  cardScope.createEl("div", { cls: "ah-card-title", text: "四，作用范围" });
+  cardScope.createEl("div", { cls: "ah-card-title", text: "五，作用范围" });
   cardScope.createEl("div", {
     cls: "ah-card-desc",
     text: "选择插件在哪些路径生效。",
