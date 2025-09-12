@@ -32,7 +32,7 @@ function escapeRegExp(str: string): string {
 
 /** Settings */
 interface AnkiHelperSettings {
-  headingLevel: number; // default 4 (####)，这是问答题
+  headingLevel: number; //      问答题卡片用的“问题”标题级别，默认4（####）
   clozeHeadingLevel: number; // 填空题卡片用的“问题”标题级别，默认5（#####）
   headingRemoveChars: string;       // space-separated chars to remove from headings
   targetDeckTemplate: string; // e.g. '[[anki背诵]]::[[filename]]'
@@ -60,6 +60,8 @@ const DEFAULT_SETTINGS: AnkiHelperSettings = {
   clozeMarker: "==",
 }
 
+
+// 以下是自定义cmd+P时出现的命令行
 export default class AnkiHelperPlugin extends Plugin {
   settings!: AnkiHelperSettings;
   private includePatterns: RegExp[] = [];
@@ -70,7 +72,7 @@ export default class AnkiHelperPlugin extends Plugin {
 
     this.addCommand({
       id: "anki-helper-run",
-      name: "Run on current file for Anki（在当前文件运行命令）",
+      name: "Insert Deck & Backlink；插入牌组（若无）并插入标题级回链；",
       callback: () => {
         const file = this.getActiveFile();
         if (file) this.processFile(file);
@@ -78,17 +80,17 @@ export default class AnkiHelperPlugin extends Plugin {
     });
     this.addCommand({
       id: "anki-helper-cloze-one",
-      name: "Cloze: Convert markers → {{c1::…}} (one-shot)",
+      name: "Cloze: Convert markers → {{c1::…}} (挖空答案在卡片「同时」出现)",
       editorCallback: () => this.runClozeConvert("one"),
     });
     this.addCommand({
       id: "anki-helper-cloze-seq",
-      name: "Cloze: Convert markers → {{c1::…}}, {{c2::…}}… (scoped by ##### block)",
+      name: "Cloze: Convert markers → {{c1::…}}, {{c2::…}}… (挖空答案在卡片「按顺序」出现)",
       editorCallback: () => this.runClozeConvert("seq"),
     });
     this.addCommand({
       id: "anki-helper-cloze-restore",
-      name: "Cloze: Restore {{cN::…}} → markers",
+      name: "Cloze: Restore {{cN::…}} → markers（将挖空标记转回成原始标记）",
       editorCallback: () => this.runClozeRestore(),
     });
 
@@ -130,6 +132,7 @@ export default class AnkiHelperPlugin extends Plugin {
     }
     return true; // all
   }
+
   private ensureTargetDeck(lines: string[], file: TFile): boolean {
     const marker = "TARGET DECK";
     if (lines.some((l) => l.includes(marker))) return false;
@@ -148,47 +151,6 @@ export default class AnkiHelperPlugin extends Plugin {
     lines.splice(idx, 0, marker, tpl, "");
     return true;
   }
-
-
-  // private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
-  //   let changed = false;
-  //   const hPrefix = "#".repeat(this.settings.headingLevel) + " ";
-  //   const noteName = file.basename;
-  //   const start = findYamlEnd(lines);           // ← 从 YAML 之后开始
-
-  //   const rawChars = this.settings.headingRemoveChars.trim() || "` < > [ ]";
-  //   const tokens = rawChars.split(/\s+/).filter(Boolean);
-  //   const pattern = tokens.length ? tokens.map(escapeRegExp).join("|") : "`|<|>|\\[|\\]";
-  //   const removeRegex = new RegExp(pattern, "g");
-
-  //   for (let i = start; i < lines.length; i++) {
-  //     const line = lines[i];
-  //     if (!line.startsWith(hPrefix)) continue;
-
-  //     const rawHeading = line.slice(hPrefix.length);
-  //     const cleanHeading = rawHeading.replace(removeRegex, "").trim();
-  //     if (rawHeading !== cleanHeading) {
-  //       lines[i] = hPrefix + cleanHeading;
-  //       changed = true;
-  //     }
-
-  //     const backlink = `[[${noteName}#${cleanHeading}]]`;
-  //     let j = i + 1;
-  //     while (j < lines.length && lines[j].trim() === "") j++;
-  //     if (j >= lines.length) {
-  //       lines.push(backlink);
-  //       changed = true;
-  //     } else if (!/^\[\[.*?#.*?\]\]$/.test(lines[j].trim())) {
-  //       lines.splice(j, 0, backlink);
-  //       changed = true;
-  //     } else if (lines[j].trim() !== backlink) {
-  //       lines[j] = backlink;
-  //       changed = true;
-  //     }
-  //   }
-  //   return changed;
-  // }
-
 
   private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
     let changed = false;
@@ -302,32 +264,54 @@ export default class AnkiHelperPlugin extends Plugin {
     return new RegExp(`${m}([\\s\\S]*?)${m}`, "g"); // 非贪婪，允许跨行
   }
 
-  private clozeConvertOne(text: string): string {
-    return text.replace(this.buildClozeMarkerRegex(), (_m, inner) => `{{c1::${inner}}}`);
-  }
-
-  // 顺序模式：以 "#####" 开头的标题为块起点，改成从前面读取数据，直到严格空行（完全为空，不含空格）为止；块内编号从 1 开始
-  private clozeConvertSeq(text: string): string {
+  // 以“填空题卡片”的标题级别为块起点（^#{L}\s+），到严格空行结束；2025-08-26
+  // 若选区/文本里没有命中任何块，则把整段 text 当作一个块处理。
+  private forEachClozeBlock(text: string, fn: (block: string) => string): string {
+    const lvl = this.settings.clozeHeadingLevel ?? 5;
+    const headingRe = new RegExp(`^#{${lvl}}\\s+`);
     const lines = text.split("\n");
-    const lvl = this.settings.clozeHeadingLevel ?? 5;    //改成从前面读取数据
-    const headingRe = new RegExp(`^#{${lvl}}\\s+`);      //改成从前面读取数据
-    const isStrictBlank = (s: string) => s === "";
+    const isBlank = (s: string) => s === "";
 
     let i = 0;
+    let matched = false;
+
     while (i < lines.length) {
       if (!headingRe.test(lines[i])) { i++; continue; }
+      matched = true;
 
-      const startLine = i + 1;
-      let j = startLine;
-      while (j < lines.length && !isStrictBlank(lines[j])) j++;
+      const start = i + 1;
+      let j = start;
+      while (j < lines.length && !isBlank(lines[j])) j++;
 
-      const block = lines.slice(startLine, j).join("\n");
-      let idx = 1;
-      const replaced = block.replace(this.buildClozeMarkerRegex(), (_m, inner) => `{{c${idx++}::${inner}}}`);
-      lines.splice(startLine, j - startLine, ...replaced.split("\n"));
-      i = startLine + replaced.split("\n").length;
+      const block = lines.slice(start, j).join("\n");
+      const out = fn(block);
+      lines.splice(start, j - start, ...out.split("\n"));
+      i = start + out.split("\n").length;
     }
+
+    if (!matched) return fn(text);
     return lines.join("\n");
+  }  //2025-08-26
+
+
+  // private clozeConvertOne(text: string): string {
+  //   return text.replace(this.buildClozeMarkerRegex(), (_m, inner) => `{{c1::${inner}}}`);
+  // }  2025-08-26，用下面的替换
+
+  private clozeConvertOneScoped(text: string): string {
+    const rx = this.buildClozeMarkerRegex();
+    return this.forEachClozeBlock(text, (blk) =>
+      blk.replace(rx, (_m, inner) => `{{c1::${inner}}}`)
+    );
+  }
+
+  // 顺序：块内 c1,c2,c3...
+  private clozeConvertSeq(text: string): string {
+    const rx = this.buildClozeMarkerRegex();
+    return this.forEachClozeBlock(text, (blk) => {
+      let idx = 1;
+      return blk.replace(rx, (_m, inner) => `{{c${idx++}::${inner}}}`);
+    });
   }
 
   private runClozeConvert(mode: "one" | "seq") {
@@ -336,10 +320,14 @@ export default class AnkiHelperPlugin extends Plugin {
     const editor = view.editor;
 
     const src = editor.getSelection() || editor.getValue();
-    const out = mode === "one" ? this.clozeConvertOne(src) : this.clozeConvertSeq(src);
+    const out = mode === "one"
+      ? this.clozeConvertOneScoped(src)
+      : this.clozeConvertSeq(src);
+
     if (editor.somethingSelected()) editor.replaceSelection(out);
     else editor.setValue(out);
   }
+  // 以上单块函数2025-08-26
 
   private clozeRestore(text: string): string {
     const marker = this.settings.clozeMarker || "==";
@@ -375,85 +363,84 @@ export default class AnkiHelperPlugin extends Plugin {
   }
 }
 
+// 以下是插件的问题所在页，用来显示界面用的。
 class AnkiHelperSettingTab extends PluginSettingTab {
   plugin: AnkiHelperPlugin;
   constructor(app: App, plugin: AnkiHelperPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
+  
   display(): void {
   const { containerEl } = this;
   containerEl.empty();
 
-  // 标题
+  // ===== 工具：创建可折叠卡片 =====
+  const createFoldCard = (title: string, opened = false) => {
+    const card = containerEl.createDiv({ cls: "ah-card" });
+    const header = card.createEl("div", { cls: "ah-card-title", text: title });
+    const content = card.createDiv({ cls: "ah-card-content" });
+    content.style.display = opened ? "block" : "none";
+    header.addEventListener("click", () => {
+      content.style.display = content.style.display === "none" ? "block" : "none";
+    });
+    return { card, header, content };
+  };
+
+  // ===== 标题 =====
   containerEl.createEl("h1", { text: "Anki Helper Settings" });
 
-  // 工具函数：生成“推荐正则”
-  const getPattern = (x: number) =>
+  // ===== 正则生成工具 =====
+  const getPatternQA = (x: number) =>
     `^#{${x}}\\s(.+)\\n*((?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
+  const getPatternCloze = (x: number) =>
+    `^#{${x}}\\s(.+\\n*(?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
 
-  // ===== 卡片 1：问题标题设置 =====
-  const cardHeading = containerEl.createDiv({ cls: "ah-card" });
-  cardHeading.createEl("div", { cls: "ah-card-title", text: "一，确定做卡片用的「问题」所在的标题级别" });
-  cardHeading.createEl("div", {
+  // =========================
+  // 卡片 1：标题级别与正则
+  // =========================
+  const cardLevel = createFoldCard("一，确定「卡片标题」所在的标题级别（问答题 + 填空题）", false);
+  // —— 问答题段落
+  cardLevel.content.createEl("div", { cls: "ah-card-subtitle", text: "1，确定「问答题卡片」的「卡片标题」所在的标题级别" });
+  cardLevel.content.createEl("div", {
     cls: "ah-card-desc",
-    text: "默认为四级标题（####）。可以在下行选择 1～6 级，且“Custom Regexp语法”会自动联动。"
+    text: "默认为四级标题（4）。可以在下行选择 1～6 级，且“Custom Regexp语法”会自动联动。"
   });
-
-  // 下拉：1..6
-  new Setting(cardHeading)
-    .setName("请选择「问题」所在的标题级别：（默认为四级标题）")
-    .setDesc("注：可点击下方的「复制正则表达式语法」按钮，并粘贴到 obsidian_to_anki插件 的“Custom Regexp”中。")
+  new Setting(cardLevel.content)
+    .setName("请选择标题级别（默认为四级标题）：")
+    .setDesc("注：请点击下方的「复制正则表达式语法」按钮，并粘贴到 obsidian_to_anki 插件 的“Custom Regexp”中。")
     .addDropdown(d => {
-      d.addOptions({ "1": "#", "2": "##", "3": "###", "4": "####", "5": "#####", "6": "######" })
+      d.addOptions({ "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6" })
         .setValue(String(this.plugin.settings.headingLevel))
         .onChange(async (v) => {
           this.plugin.settings.headingLevel = Number(v);
           await this.plugin.saveSettings();
-          updateRecommendedRegexp();
+          updateQARegexp();
         });
     });
-
-  // 推荐正则 + 复制
-  const pre = cardHeading.createEl("pre", { cls: "ah-code" });
-  const codeEl = pre.createEl("code");
-  const actions = cardHeading.createDiv({ cls: "ah-actions" });
-  const copyBtn = actions.createEl("button", { text: "复制正则表达式语法" });
-  const updateRecommendedRegexp = () => {
-    codeEl.setText(getPattern(this.plugin.settings.headingLevel));
-  };
-  updateRecommendedRegexp();
-  copyBtn.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(codeEl.textContent ?? "");
+  const qaPre = cardLevel.content.createEl("pre", { cls: "ah-code" });
+  const qaCode = qaPre.createEl("code");
+  const qaActions = cardLevel.content.createDiv({ cls: "ah-actions" });
+  const qaCopyBtn = qaActions.createEl("button", { text: "复制正则表达式语法" });
+  const updateQARegexp = () => { qaCode.setText(getPatternQA(this.plugin.settings.headingLevel)); };
+  updateQARegexp();
+  qaCopyBtn.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(qaCode.textContent ?? "");
     new Notice("已复制到剪贴板");
   });
 
-  //以下为新的填充题卡片
-  // 生成“填空题卡片”推荐正则：^#{L}\s(.+\n*(?:\n(?:^[^\n#].{0,2}$|^[^\n#].{3}(?<!<!--).*))+)
-  const getClozePattern = (x: number) =>
-    `^#{${x}}\\s(.+\\n*(?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
-
-  // === 一点二：填空题卡片的“问题”标题级别 ===
-  const getClozePatternQ = (x: number) =>
-    `^#{${x}}\\s(.+\\n*(?:\\n(?:^[^\\n#].{0,2}$|^[^\\n#].{3}(?<!<!--).*))+)`;
-
-  const cardClozeHeading = containerEl.createDiv({ cls: "ah-card" });
-  cardClozeHeading.createEl("div", {
-    cls: "ah-card-title",
-    text: "一点二，确定做「填空题卡片」用的「问题」所在的标题级别",
-  });
-  cardClozeHeading.createEl("div", {
+  // —— 填空题段落
+  cardLevel.content.createEl("div", { cls: "ah-card-subtitle", text: "2，确定「填空题卡片」的「卡片标题」所在的标题级别" });
+  cardLevel.content.createEl("div", {
     cls: "ah-card-desc",
-    text:
-      "默认为五级标题（#####）。可以在下行选择 1～6 级，且“Custom Regexp语法”会自动联动。注意不要与「问答题卡片」所在标题级别相同，否则插件会读取有误。",
+    text: "默认为五级标题（5）。可以在下行选择 1～6 级，且“Custom Regexp语法”会自动联动。\n注意不要与「问答题卡片」的标题级别相同，否则插件会读取有误。"
   });
-
   let lastClozeLvl = this.plugin.settings.clozeHeadingLevel ?? 5;
-  new Setting(cardClozeHeading)
-    .setName("请选择「问题」所在的标题级别：（默认为五级标题）")
+  new Setting(cardLevel.content)
+    .setName("请选择标题级别（默认为五级标题）")
     .setDesc("注：可点击下方的「复制正则表达式语法」按钮，并粘贴到 obsidian_to_anki 插件的“Custom Regexp”中。")
     .addDropdown((d) => {
-      d.addOptions({ "1": "#", "2": "##", "3": "###", "4": "####", "5": "#####", "6": "######" })
+      d.addOptions({ "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6" })
         .setValue(String(lastClozeLvl))
         .onChange(async (v) => {
           const lvl = Number(v);
@@ -465,36 +452,33 @@ class AnkiHelperSettingTab extends PluginSettingTab {
           this.plugin.settings.clozeHeadingLevel = lvl;
           lastClozeLvl = lvl;
           await this.plugin.saveSettings();
-          updateClozeRegexpQ();
+          updateClozeRegexp();
         });
     });
-
-  const preClozeQ = cardClozeHeading.createEl("pre", { cls: "ah-code" });
-  const codeClozeQ = preClozeQ.createEl("code");
-  const actionsClozeQ = cardClozeHeading.createDiv({ cls: "ah-actions" });
-  const copyClozeQ = actionsClozeQ.createEl("button", { text: "复制正则表达式语法" });
-
-  const updateClozeRegexpQ = () => {
-    codeClozeQ.setText(getClozePatternQ(this.plugin.settings.clozeHeadingLevel ?? 5));
+  const clozePre = cardLevel.content.createEl("pre", { cls: "ah-code" });
+  const clozeCode = clozePre.createEl("code");
+  const clozeActions = cardLevel.content.createDiv({ cls: "ah-actions" });
+  const clozeCopyBtn = clozeActions.createEl("button", { text: "复制正则表达式语法" });
+  const updateClozeRegexp = () => {
+    clozeCode.setText(getPatternCloze(this.plugin.settings.clozeHeadingLevel ?? 5));
   };
-  updateClozeRegexpQ();
-
-  copyClozeQ.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(codeClozeQ.textContent ?? "");
+  updateClozeRegexp();
+  clozeCopyBtn.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(clozeCode.textContent ?? "");
     new Notice("已复制到剪贴板");
   });
 
-
-
-
-  // ===== 卡片 2：TARGET DECK =====
-  const cardDeck = containerEl.createDiv({ cls: "ah-card" });
-  cardDeck.createEl("div", { cls: "ah-card-title", text: "二，加入 TARGET DECK" });
-  cardDeck.createEl("div", { cls: "ah-card-desc", text: "建议加入父牌组，示例：[[anki背诵]]::[[filename]]。（备注：filename即md本身的文件名称，会自动生成）" });
-
-  new Setting(cardDeck)
-    .setName("启用 TARGET DECK 自动插入")
-    .setDesc("注：在文首（或 YAML 后）插入 “TARGET DECK + 牌组名”，这样方便在anki中定位")
+  // =========================
+  // 卡片 2：TARGET DECK
+  // =========================
+  const cardDeck = createFoldCard("二，加入 TARGET DECK，给 Anki 指定「牌组」", false);
+  cardDeck.content.createEl("div", {
+    cls: "ah-card-desc",
+    text: "给Anki卡片指定牌组，方便在Anki中进行管理，推荐采用「父子牌组」的结构化管理方式"
+  });
+  new Setting(cardDeck.content)
+    .setName("启用 TARGET DECK （目标牌组）的插入功能")
+    .setDesc("注：运行命令「Insert Deck & Backlink」后在文件开头插入「牌组名」，以便在 Anki 中归类、定位")
     .addToggle(t => t
       .setValue(this.plugin.settings.enableTargetDeck)
       .onChange(async (v) => {
@@ -502,15 +486,12 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-
-  new Setting(cardDeck)
-    .setName("TARGET DECK 模板")
-    // .setDesc("[[anki背诵]]为父牌组，可按自己使用习惯进行替换,[[filename]] 为当前笔记名，可自动生成子牌组名称")
+  new Setting(cardDeck.content)
+    .setName("TARGET DECK 模板示例")
     .setDesc(createFragment(frag => {
-      frag.createEl("div", { text: "[[anki背诵]]为父牌组，可按自己使用习惯进行替换" });
-      frag.createEl("div", { text: "[[filename]] 为当前笔记名，可自动生成子牌组名称" });
+      frag.createEl("div", { text: "[[anki背诵]]为父牌组，可按自己使用习惯进行修改" });
+      frag.createEl("div", { text: "[[filename]] 为固定语法，以文件名生成子牌组名称" });
     }))
-
     .addText((text) =>
       text
         .setPlaceholder("[[anki背诵]]::[[filename]]")
@@ -521,18 +502,18 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         })
     );
 
-  // ===== 卡片 3：清理与排版 =====
-  const cardCleanup = containerEl.createDiv({ cls: "ah-card" });
-  cardCleanup.createEl("div", { cls: "ah-card-title", text: "三，清理与排版" });
-  cardCleanup.createEl("div", {
+  // =========================
+  // 卡片 3：生成标题级回链
+  // =========================
+  const cardCleanup = createFoldCard("三，为卡片生成「标题级回链」，实现复习时「卡片级跳转」", false);
+  cardCleanup.content.createEl("div", {
     cls: "ah-card-desc",
-    text: "清理「问题标题」中的特殊字符（可自定义）并插入回链；删除空列表项；列表与段落间自动插空行。"
+    text: "清理「卡片标题」中的特殊字符并插入标题级回链；列表与段落间自动插空行。"
   });
-
   let charSetting: Setting;
-  new Setting(cardCleanup)
-    .setName("启用：标题清理 + 标题级回链 功能")
-    .setDesc("注：清理标题特殊字符后，将不影响[[ ]]的生成。同时插入类似 [[Note#Heading]] 的回链，以方便在anki复习时直接跳到对应的卡片中。")
+  new Setting(cardCleanup.content)
+    .setName("启用：生成标题级回链 功能")
+    .setDesc("注：运行命令「Insert Deck & Backlink」后会清理「卡片标题」中的特殊字符，同时插入或更新标题级回链，以便在 anki 复习时跳转到对应卡片进行修改。")
     .addToggle(t => t
       .setValue(this.plugin.settings.enableHeadingOps)
       .onChange(async (v) => {
@@ -541,9 +522,8 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-
-  charSetting = new Setting(cardCleanup)
-    .setName("标题中要删除的字符")
+  charSetting = new Setting(cardCleanup.content)
+    .setName("「卡片标题」中要删除的字符")
     .setDesc("输入要从标题中移除的字符，以空格分隔。默认移除：` < > [ ]")
     .addText(text =>
       text
@@ -555,10 +535,9 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         })
     );
   charSetting.setDisabled(!this.plugin.settings.enableHeadingOps);
-
-  new Setting(cardCleanup)
+  new Setting(cardCleanup.content)
     .setName("启用：列表与段落间自动留空行功能")
-    .setDesc("注：在列表与后续段落间自动留一空行，这样在anki中显示会更美观。")
+    .setDesc("在列表与后续段落间自动留一空行，使在Anki中的显示更加美观。")
     .addToggle(t => t
       .setValue(this.plugin.settings.enableListTidy)
       .onChange(async (v) => {
@@ -567,14 +546,17 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       })
     );
 
-  // ===== 卡片 4：Cloze填空题卡片转换 =====
-  const cardCloze = containerEl.createDiv({ cls: "ah-card" });
-  cardCloze.createEl("div", { cls: "ah-card-title", text: "四，Cloze填空题卡片转换" });
-  cardCloze.createEl("div", { cls: "ah-card-desc", text: "对称包裹的标记，例如 == / ** / $$ 等。用于识别并转换为 {{cN::…}} 或从 {{cN::…}} 还原。" });
-
-  new Setting(cardCloze)
-    .setName("Marker挖空标记（对称）")
-    .setDesc("起止标记一致，默认 ==")
+  // =========================
+  // 卡片 4：Cloze 填空题卡片转换
+  // =========================
+  const cardCloze = createFoldCard("四，更方便的「填空题卡片」挖空功能", false);
+  cardCloze.content.createEl("div", {
+    cls: "ah-card-desc",
+    text: "挖空标识的转换：如将「hello ==world==」转换为「hello {{c1::world}}。也可将后者转化成前者」"
+  });
+  new Setting(cardCloze.content)
+    .setName("在右侧输入「挖空标记」")
+    .setDesc("可输入类似「==、**、$$等标记」，默认 ==")
     .addText(t => t
       .setPlaceholder("==")
       .setValue(this.plugin.settings.clozeMarker || "==")
@@ -584,15 +566,15 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       })
     );
 
-  // ===== 卡片 5：作用范围 =====
-  const cardScope = containerEl.createDiv({ cls: "ah-card" });
-  cardScope.createEl("div", { cls: "ah-card-title", text: "五，作用范围" });
-  cardScope.createEl("div", {
+  // =========================
+  // 卡片 5：作用范围
+  // =========================
+  const cardScope = createFoldCard("五，本插件作用范围", false);
+  cardScope.content.createEl("div", {
     cls: "ah-card-desc",
-    text: "选择插件在哪些路径生效。",
+    text: "选择本插件在哪些文件路径生效。"
   });
-
-  const scopeSetting = new Setting(cardScope)
+  const scopeSetting = new Setting(cardScope.content)
     .setName("运行范围")
     .setDesc("选择插件处理哪些文件")
     .addDropdown(d => {
@@ -609,9 +591,9 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         });
     });
 
-  const includeSetting = new Setting(cardScope)
+  const includeSetting = new Setting(cardScope.content)
     .setName("仅在以下文件夹生效")
-    .setDesc("输入为相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
+    .setDesc("相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
   const includeArea = includeSetting.controlEl.createEl("textarea");
   includeArea.setAttr("rows", 4);
   includeArea.setAttr("placeholder", "例：\nNotes/Anki/\nInbox/Todo.md");
@@ -624,9 +606,9 @@ class AnkiHelperSettingTab extends PluginSettingTab {
     this.plugin.updateScopePatterns();
   });
 
-  const excludeSetting = new Setting(cardScope)
+  const excludeSetting = new Setting(cardScope.content)
     .setName("排除以下路径")
-    .setDesc("输入为相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
+    .setDesc("相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。");
   const excludeArea = excludeSetting.controlEl.createEl("textarea");
   excludeArea.setAttr("rows", 4);
   excludeArea.setAttr("placeholder", "例：\nNotes/Anki/\nInbox/Todo.md");

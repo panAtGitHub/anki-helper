@@ -39,3 +39,12 @@
   white-space: pre-wrap;    /* 小屏不溢出 */
   user-select: text;
 }
+
+
+/* 以下为对设置页的样式设置 */
+.ah-card { margin: 12px 0; }
+.ah-card-title { font-weight: 600; cursor: pointer; padding: 6px 8px; border-radius: 6px; }
+.ah-card-content { padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 6px; margin-top: 6px; background: var(--background-primary); }
+.ah-card-subtitle { margin-top: 10px; font-weight: 600; }
+.ah-actions { margin-top: 8px; }
+.ah-code { user-select: text; }
