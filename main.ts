@@ -189,7 +189,9 @@ export default class AnkiHelperPlugin extends Plugin {
       name: UI_TEXT[this.settings.language].commandInsertName,
       callback: () => {
         const file = this.getActiveFile();
-        if (file) this.processFile(file);
+        if (!file) { new Notice("Anki Helper: no active file."); return; }
+        if (file.extension !== "md") { new Notice("Anki Helper: active file is not a Markdown file."); return; }
+        this.processFile(file);
       }
     });
     this.addCommand({
@@ -365,12 +367,11 @@ export default class AnkiHelperPlugin extends Plugin {
 	}
 
 	return changed;
-	}
+  }
 
 
   private getActiveFile(): TFile | null {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    return view?.file ?? null;
+    return this.app.workspace.getActiveFile();
   }
 
   private buildClozeMarkerRegex(): RegExp {
@@ -756,4 +757,3 @@ class AnkiHelperSettingTab extends PluginSettingTab {
 }
 
 }
-
