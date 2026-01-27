@@ -2,28 +2,30 @@ import type { LocaleText } from "../types";
 
 const en: LocaleText = {
   settingsTitle: "Anki Helper settings",
-  language: "Language",
-  langChinese: "Chinese",
-  langEnglish: "English",
-  card1Title: "1. Determine heading level for card titles (QA & Cloze)",
+  card1Title: "1. Determine heading level for card titles (QA & cloze)",
   qaSubtitle: "1. Determine heading level for question card titles",
   qaDesc: "Default is heading level 4. You can choose level 1-6 below, and the custom regexp will update automatically.",
   headingLevelName: "Select heading level (default 4):",
-  headingLevelDesc: "Note: Click the 'Copy regexp syntax' button below and paste it into the obsidian_to_anki plugin's 'Custom Regexp'.",
+  headingLevelDesc:
+    "Note: click the 'Copy regexp syntax' button below and paste it into the obsidian_to_anki plugin's 'custom regexp'.",
   copyRegex: "Copy regexp syntax",
   copied: "Copied to clipboard",
   clozeSubtitle: "2. Determine heading level for cloze card titles",
-  clozeDesc: "Default is heading level 5. Choose level 1-6 below, and the custom regexp will update automatically.\nNote: Do not use the same level as question cards or parsing will fail.",
+  clozeDesc:
+    "Default is heading level 5. Choose level 1-6 below, and the custom regexp will update automatically.\nNote: do not use the same level as question cards or parsing will fail.",
   clozeHeadingName: "Select heading level (default 5)",
-  clozeHeadingDesc: "Note: Click 'Copy regexp syntax' below and paste into the obsidian_to_anki plugin's 'Custom Regexp'.",
+  clozeHeadingDesc:
+    "Note: click 'Copy regexp syntax' below and paste into the obsidian_to_anki plugin's 'custom regexp'.",
   levelConflict: "Same as question card level, which causes parsing errors. Please choose another level.",
-  card2Title: "2. Insert TARGET DECK to specify Anki deck",
+  card2Title: "2. Insert TARGET DECK to specify an Anki deck",
   card2Desc: "Specify a deck for Anki cards to manage them easily. A parent-child deck structure is recommended.",
   enableDeckName: "Enable inserting TARGET DECK",
-  enableDeckDesc: "Note: Running 'Insert deck & backlink' will insert the deck name at the beginning of the file for easier categorization in Anki.",
+  enableDeckDesc:
+    "Note: running 'Insert deck & backlink' will insert the deck name at the beginning of the file for easier categorization in Anki.",
   targetDeckLocationName: "TARGET DECK location",
-  targetDeckLocationDesc: "Choose where to write TARGET DECK. If both exist, the plugin will keep only the selected location.",
-  targetDeckLocationBody: "Body (original format)",
+  targetDeckLocationDesc:
+    "Choose where to write TARGET DECK. If both exist, the plugin will keep only the selected location.",
+  targetDeckLocationBody: "Body",
   targetDeckLocationYaml: "YAML frontmatter",
   deckTemplateName: "TARGET DECK template example",
   deckTemplateDesc1: "\"[[anki]]\" is the parent deck; modify it as you like.",
@@ -32,13 +34,14 @@ const en: LocaleText = {
   card3Title: "3. Generate heading backlinks for cards to enable card-level navigation during review",
   card3Desc: "Clean special characters in card titles and insert heading backlinks; automatically insert blank lines between lists and paragraphs.",
   enableHeadingOpsName: "Enable heading backlink generation",
-  enableHeadingOpsDesc: "Note: Running 'Insert deck & backlink' cleans special characters in card titles and inserts/updates heading backlinks, allowing you to jump to the source card during Anki review.",
+  enableHeadingOpsDesc:
+    "Note: running 'Insert deck & backlink' cleans special characters in card titles and inserts/updates heading backlinks, allowing you to jump to the source card during Anki review.",
   headingRemoveCharsName: "Characters to remove from card titles",
   headingRemoveCharsDesc: "Enter characters to remove from titles, separated by spaces. Default: ` < > [ ]",
   headingRemovePlaceholder: "` < > [ ]",
   enableListTidyName: "Enable automatic blank line insertion between lists and paragraphs",
   enableListTidyDesc: "Automatically insert one blank line between lists and the following paragraph for better appearance in Anki.",
-  card4Title: "4. Easier cloze card marker conversion",
+  card4Title: "4. Easier cloze marker conversion",
   card4Desc: "Convert cloze markers: e.g. 'hello ==world==' → 'hello {{c1::world}}', and vice versa.",
   clozeMarkerName: "Enter cloze marker",
   clozeMarkerDesc: "You can input markers like ==, **, $$; default is ==",
@@ -59,6 +62,10 @@ const en: LocaleText = {
   commandClozeOneName: "Cloze: convert markers → {{c1::…}} (answers appear simultaneously)",
   commandClozeSeqName: "Cloze: convert markers → {{c1::…}}, {{c2::…}}… (answers appear sequentially)",
   commandClozeRestoreName: "Cloze: restore {{cN::…}} → markers",
+  noticeNoActiveFile: "Anki Helper: no active file.",
+  noticeNotMarkdown: "Anki Helper: active file is not a Markdown file.",
+  noticeSkippedScope: "Anki Helper: skipped (out of scope).",
+  noticeNoMarkdownView: "No active Markdown view.",
 };
 
 export default en;

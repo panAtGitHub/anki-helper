@@ -9,7 +9,7 @@
 
 import { App, Plugin, PluginSettingTab, Setting, MarkdownView, TFile, Notice } from "obsidian";
 
-import { getLocale, type LocaleKey } from "./src/lang/helper";
+import { getLocale } from "./src/lang/helper";
 import type { LocaleText } from "./src/lang/types";
 
 function findYamlEnd(lines: string[]): number {
@@ -32,7 +32,6 @@ function escapeRegExp(str: string): string {
 }
 
 interface AnkiHelperSettings {
-  uiLanguage: LocaleKey;
   headingLevel: number;
   clozeHeadingLevel: number;
   headingRemoveChars: string;
@@ -48,7 +47,6 @@ interface AnkiHelperSettings {
 }
 
 const DEFAULT_SETTINGS: AnkiHelperSettings = {
-  uiLanguage: "en",
   headingLevel: 4,
   clozeHeadingLevel: 5,
   headingRemoveChars: "` < > [ ]",
@@ -78,11 +76,11 @@ export default class AnkiHelperPlugin extends Plugin {
       callback: () => {
         const file = this.getActiveFile();
         if (!file) {
-          new Notice("Anki Helper: no active file.");
+          new Notice(locale.noticeNoActiveFile);
           return;
         }
         if (file.extension !== "md") {
-          new Notice("Anki Helper: active file is not a Markdown file.");
+          new Notice(locale.noticeNotMarkdown);
           return;
         }
         void this.processFile(file);
@@ -112,7 +110,7 @@ export default class AnkiHelperPlugin extends Plugin {
 
   private async processFile(file: TFile): Promise<void> {
     if (!this.isInScope(file)) {
-      new Notice("Anki Helper: skipped (out of scope)");
+      new Notice(this.getLocaleText().noticeSkippedScope);
       return;
     }
 
@@ -371,7 +369,7 @@ export default class AnkiHelperPlugin extends Plugin {
   private runClozeConvert(mode: "one" | "seq") {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
-      new Notice("No active Markdown view.");
+      new Notice(this.getLocaleText().noticeNoMarkdownView);
       return;
     }
     const editor = view.editor;
@@ -391,7 +389,7 @@ export default class AnkiHelperPlugin extends Plugin {
   private runClozeRestore() {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
-      new Notice("No active Markdown view.");
+      new Notice(this.getLocaleText().noticeNoMarkdownView);
       return;
     }
     const editor = view.editor;
@@ -418,7 +416,7 @@ export default class AnkiHelperPlugin extends Plugin {
   }
 
   getLocaleText(): LocaleText {
-    return getLocale(this.app, this.settings.uiLanguage);
+    return getLocale(this.app, "system");
   }
 }
 
@@ -435,21 +433,6 @@ class AnkiHelperSettingTab extends PluginSettingTab {
     const t = this.plugin.getLocaleText();
 
     new Setting(containerEl).setName(t.settingsTitle).setHeading();
-
-    new Setting(containerEl)
-      .setName(t.language)
-      .addDropdown((d) => {
-        d.addOptions({ en: t.langEnglish, zh: t.langChinese })
-          .setValue(this.plugin.settings.uiLanguage)
-          .onChange((v) => {
-            if (v !== "en" && v !== "zh") return;
-            this.plugin.settings.uiLanguage = v;
-            void this.plugin.saveSettings().then(
-              () => this.display(),
-              (err) => console.error("Failed to save settings", err),
-            );
-          });
-      });
 
     const createFoldCard = (title: string, opened = false) => {
       const card = containerEl.createDiv({ cls: "ah-card" });

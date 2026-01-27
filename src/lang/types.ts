@@ -1,8 +1,5 @@
 export interface LocaleText {
   settingsTitle: string;
-  language: string;
-  langChinese: string;
-  langEnglish: string;
   card1Title: string;
   qaSubtitle: string;
   qaDesc: string;
@@ -57,4 +54,8 @@ export interface LocaleText {
   commandClozeOneName: string;
   commandClozeSeqName: string;
   commandClozeRestoreName: string;
+  noticeNoActiveFile: string;
+  noticeNotMarkdown: string;
+  noticeSkippedScope: string;
+  noticeNoMarkdownView: string;
 }

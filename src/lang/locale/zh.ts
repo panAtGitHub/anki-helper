@@ -2,9 +2,6 @@ import type { LocaleText } from "../types";
 
 const zh: LocaleText = {
   settingsTitle: "Anki Helper 设置",
-  language: "界面语言",
-  langChinese: "中文",
-  langEnglish: "英文",
   card1Title: "一，确定「卡片标题」所在的标题级别（问答题 + 填空题）",
   qaSubtitle: "1，确定「问答题卡片」的「卡片标题」所在的标题级别",
   qaDesc: "默认为四级标题（4）。可以在下行选择 1～6 级，且“Custom Regexp语法”会自动联动。",
@@ -59,6 +56,10 @@ const zh: LocaleText = {
   commandClozeOneName: "填空题转换：标记统一转化成{{c1::…}} (挖空答案在卡片「同时」出现)",
   commandClozeSeqName: "填空题转换：标记依次转化成{{c1::…}}、{{c2::…}}… (挖空答案在卡片「按顺序」出现)",
   commandClozeRestoreName: "填空题转换：将挖空标记转回成原始标记",
+  noticeNoActiveFile: "Anki Helper：未找到当前打开的文件。",
+  noticeNotMarkdown: "Anki Helper：当前文件不是 Markdown。",
+  noticeSkippedScope: "Anki Helper：已跳过（不在作用范围内）。",
+  noticeNoMarkdownView: "未找到当前的 Markdown 视图。",
 };
 
 export default zh;
