@@ -38,6 +38,7 @@ interface AnkiHelperSettings {
   headingRemoveChars: string;
   targetDeckTemplate: string;
   enableTargetDeck: boolean;
+  targetDeckLocation: "body" | "yaml";
   enableHeadingOps: boolean;
   enableListTidy: boolean;
   runScope: "all" | "include" | "exclude";
@@ -53,6 +54,7 @@ const DEFAULT_SETTINGS: AnkiHelperSettings = {
   headingRemoveChars: "` < > [ ]",
   targetDeckTemplate: "[[anki]]::[[filename]]",
   enableTargetDeck: true,
+  targetDeckLocation: "yaml",
   enableHeadingOps: true,
   enableListTidy: true,
   runScope: "all",
@@ -145,21 +147,85 @@ export default class AnkiHelperPlugin extends Plugin {
 
   private ensureTargetDeck(lines: string[], file: TFile): boolean {
     const marker = "TARGET DECK";
-    if (lines.some((l) => l.includes(marker))) return false;
-
-    let idx = findYamlEnd(lines);
-    if (idx === 0) {
-      const firstHeading = lines.findIndex((l) => l.trim().startsWith("#"));
-      if (firstHeading >= 0) idx = firstHeading;
-    }
-
     const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
-    if (idx > 0 && lines[idx - 1] === "---") {
-      lines.splice(idx, 0, "");
-      idx++;
+    const lineValue = `${marker}: ${tpl}`;
+    const location = this.settings.targetDeckLocation ?? "body";
+
+    const getYamlEnd = () => (lines[0] === "---" ? lines.indexOf("---", 1) : -1);
+
+    const removeBodyTargetDeck = (): boolean => {
+      const idx = lines.findIndex((l) => l.trim() === marker);
+      if (idx < 0) return false;
+      let removeCount = 1;
+      const next = lines[idx + 1];
+      if (next !== undefined) {
+        const nextTrim = next.trim();
+        if (nextTrim === "") {
+          removeCount++;
+        } else if (!nextTrim.startsWith("#") && nextTrim !== "---") {
+          removeCount++;
+          const after = lines[idx + 2];
+          if (after !== undefined && after.trim() === "") removeCount++;
+        }
+      }
+      lines.splice(idx, removeCount);
+      return true;
+    };
+
+    const removeYamlTargetDeck = (end: number): boolean => {
+      for (let i = 1; i < end; i++) {
+        if (/^TARGET DECK\s*:/.test(lines[i])) {
+          lines.splice(i, 1);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const ensureYamlTargetDeck = (): boolean => {
+      const end = getYamlEnd();
+      if (end > 0) {
+        for (let i = 1; i < end; i++) {
+          if (/^TARGET DECK\s*:/.test(lines[i])) {
+            if (lines[i] !== lineValue) {
+              lines[i] = lineValue;
+              return true;
+            }
+            return false;
+          }
+        }
+        lines.splice(end, 0, lineValue);
+        return true;
+      }
+      lines.unshift("---", lineValue, "---", "");
+      return true;
+    };
+
+    const ensureBodyTargetDeck = (): boolean => {
+      if (lines.some((l) => l.trim() === marker)) return false;
+      let idx = findYamlEnd(lines);
+      if (idx === 0) {
+        const firstHeading = lines.findIndex((l) => l.trim().startsWith("#"));
+        if (firstHeading >= 0) idx = firstHeading;
+      }
+      if (idx > 0 && lines[idx - 1] === "---") {
+        lines.splice(idx, 0, "");
+        idx++;
+      }
+      lines.splice(idx, 0, marker, tpl, "");
+      return true;
+    };
+
+    if (location === "yaml") {
+      const changedYaml = ensureYamlTargetDeck();
+      const removedBody = removeBodyTargetDeck();
+      return changedYaml || removedBody;
     }
-    lines.splice(idx, 0, marker, tpl, "");
-    return true;
+
+    const end = getYamlEnd();
+    const removedYaml = end > 0 ? removeYamlTargetDeck(end) : false;
+    const changedBody = ensureBodyTargetDeck();
+    return removedYaml || changedBody;
   }
 
   private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
@@ -484,6 +550,19 @@ class AnkiHelperSettingTab extends PluginSettingTab {
           this.plugin.settings.enableTargetDeck = v;
           void this.plugin.saveSettings().catch((err) => console.error("Failed to save settings", err));
         }),
+      );
+    new Setting(cardDeck.content)
+      .setName(t.targetDeckLocationName)
+      .setDesc(t.targetDeckLocationDesc)
+      .addDropdown((d) =>
+        d
+          .addOptions({ body: t.targetDeckLocationBody, yaml: t.targetDeckLocationYaml })
+          .setValue(this.plugin.settings.targetDeckLocation ?? "body")
+          .onChange((v) => {
+            if (v !== "body" && v !== "yaml") return;
+            this.plugin.settings.targetDeckLocation = v;
+            void this.plugin.saveSettings().catch((err) => console.error("Failed to save settings", err));
+          }),
       );
     new Setting(cardDeck.content)
       .setName(t.deckTemplateName)

@@ -19,6 +19,10 @@ export interface LocaleText {
   card2Desc: string;
   enableDeckName: string;
   enableDeckDesc: string;
+  targetDeckLocationName: string;
+  targetDeckLocationDesc: string;
+  targetDeckLocationBody: string;
+  targetDeckLocationYaml: string;
   deckTemplateName: string;
   deckTemplateDesc1: string;
   deckTemplateDesc2: string;

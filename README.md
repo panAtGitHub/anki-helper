@@ -6,7 +6,7 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
 
 ## 功能概览 / Features
 
-- 目标牌组：在文首（YAML 后）插入 `TARGET DECK` 与牌组名（支持模板与 `[[filename]]` 变量）。
+- 目标牌组：支持写入到正文或 YAML；支持模板与 `[[filename]]` 变量，且可在两处同时存在时按配置自动清理另一处。
 - 标题级回链：在设定的“问答题标题级别”和“填空题标题级别”下，自动插入 `[[Note#Heading]]` 回链，复习时可直接回跳到卡片位置。
 - 标题清理：从卡片标题中移除指定字符（默认移除 `` ` < > [ ] ``，可自定义，以空格分隔）。
 - 列表整理：删除空的列表项；在列表与后续段落之间自动插入一行（仅含空格），便于在 Anki 中更美观显示。
@@ -38,6 +38,7 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
   - 提供对应的 Custom Regexp 语法，点击“复制”后粘贴到 obsidian_to_anki 的设置中。
 - TARGET DECK：
   - 开关：是否自动插入 `TARGET DECK`。
+  - 写入位置：可选择写入正文（原先格式）或 YAML 区（`TARGET DECK: ...`）。
   - 模板：例如 `[[anki背诵]]::[[filename]]`，其中 `[[filename]]` 会被替换为当前文件名作为子牌组。
 - 标题与回链：
   - 开关：是否执行标题清理与回链插入。
