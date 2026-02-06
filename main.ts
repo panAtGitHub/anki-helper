@@ -12,6 +12,7 @@ import { App, Plugin, PluginSettingTab, Setting, MarkdownView, TFile, Notice, ty
 import { getLocale } from "./src/lang/helper";
 import type { LocaleText } from "./src/lang/types";
 
+// 兜底解析 YAML 结束行（仅在 metadata cache 不可用时使用）。
 function findYamlEnd(lines: string[]): number {
   if (lines[0] === "---") {
     const end = lines.indexOf("---", 1);
@@ -20,6 +21,7 @@ function findYamlEnd(lines: string[]): number {
   return 0;
 }
 
+// 将简单 glob（支持 * 与 **）转换为正则，用于路径过滤。
 function globToRegExp(pattern: string): RegExp {
   const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   const withPlaceholders = escaped.replace(/\*\*/g, "§§");
@@ -27,6 +29,7 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp("^" + single.replace(/§§/g, ".*") + "$");
 }
 
+// 转义正则特殊字符，避免用户配置字符被误解析。
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -114,6 +117,7 @@ export default class AnkiHelperPlugin extends Plugin {
       return;
     }
 
+    // 第一阶段：只处理 frontmatter 中的 TARGET DECK（原子更新，避免手写 YAML 文本）。
     if (this.settings.enableTargetDeck) {
       const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
       const location = this.settings.targetDeckLocation ?? "body";
@@ -124,6 +128,7 @@ export default class AnkiHelperPlugin extends Plugin {
       }
     }
 
+    // 第二阶段：处理正文文本（TARGET DECK 正文块、标题改写、列表清理）。
     await this.app.vault.process(file, (raw) => {
       const lines = raw.split(/\r?\n/);
       const cache = this.app.metadataCache.getFileCache(file);
@@ -154,6 +159,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return true;
   }
 
+  // 计算正文起始行：优先使用缓存里的 frontmatterPosition，失败时回退文本推断。
   private getContentStartLine(lines: string[], cache?: CachedMetadata | null): number {
     const end = cache?.frontmatterPosition?.end;
     if (end && end.line >= 0 && end.line < lines.length) {
@@ -162,6 +168,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return findYamlEnd(lines);
   }
 
+  // 获取首个标题所在行：优先使用 metadata cache 的 heading.position。
   private getFirstHeadingLine(lines: string[], cache?: CachedMetadata | null): number {
     const firstHeading = cache?.headings?.[0]?.position?.start.line;
     if (firstHeading !== undefined && firstHeading >= 0 && firstHeading < lines.length) {
@@ -170,6 +177,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return lines.findIndex((l) => l.trim().startsWith("#"));
   }
 
+  // 将 TARGET DECK 写入 YAML frontmatter（官方推荐方式：processFrontMatter）。
   private async ensureYamlTargetDeck(file: TFile, value: string): Promise<boolean> {
     let changed = false;
     await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
@@ -182,6 +190,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return changed;
   }
 
+  // 从 YAML frontmatter 删除 TARGET DECK（原子更新，避免字符串删改）。
   private async removeYamlTargetDeck(file: TFile): Promise<boolean> {
     const cache = this.app.metadataCache.getFileCache(file);
     if (!cache?.frontmatter || !Object.prototype.hasOwnProperty.call(cache.frontmatter, "TARGET DECK")) {
@@ -199,11 +208,13 @@ export default class AnkiHelperPlugin extends Plugin {
     return changed;
   }
 
+  // 只处理正文里的 TARGET DECK 区块；YAML 改动在独立阶段完成。
   private ensureTargetDeckInBody(lines: string[], file: TFile, cache?: CachedMetadata | null): boolean {
     const marker = "TARGET DECK";
     const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
     const location = this.settings.targetDeckLocation ?? "body";
 
+    // 删除正文中的 TARGET DECK 标记段（兼容常见空行布局）。
     const removeBodyTargetDeck = (): boolean => {
       const idx = lines.findIndex((l) => l.trim() === marker);
       if (idx < 0) return false;
@@ -223,6 +234,7 @@ export default class AnkiHelperPlugin extends Plugin {
       return true;
     };
 
+    // 在正文插入 TARGET DECK 段，优先放到 frontmatter 后或首个标题前。
     const ensureBodyTargetDeck = (): boolean => {
       if (lines.some((l) => l.trim() === marker)) return false;
       let idx = this.getContentStartLine(lines, cache);
@@ -241,6 +253,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return location === "yaml" ? removeBodyTargetDeck() : ensureBodyTargetDeck();
   }
 
+  // 处理目标级别标题：清理字符并在标题下方插入/修正回链。
   private rewriteHeadingsAndCollectLists(lines: string[], file: TFile, cache?: CachedMetadata | null): boolean {
     let changed = false;
     const qaLvl = this.settings.headingLevel ?? 4;
@@ -291,6 +304,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return changed;
   }
 
+  // 清理列表：删除空列表项，并在列表与正文之间补一个单空格行。
   private tidyLists(lines: string[], cache?: CachedMetadata | null): boolean {
     let changed = false;
 
@@ -338,6 +352,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return new RegExp(`${m}([\\s\\S]*?)${m}`, "g");
   }
 
+  // 按 cloze 标题块分段处理；若没有匹配标题则退化为整篇处理。
   private forEachClozeBlock(text: string, fn: (block: string) => string): string {
     const lvl = this.settings.clozeHeadingLevel ?? 5;
     const headingRe = new RegExp(`^#{${lvl}}\\s+`);
@@ -373,6 +388,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return this.forEachClozeBlock(text, (blk) => blk.replace(rx, (_m, inner) => `{{c1::${inner}}}`));
   }
 
+  // 顺序编号模式：同一个块内按 c1/c2/c3 递增。
   private clozeConvertSeq(text: string): string {
     const rx = this.buildClozeMarkerRegex();
     return this.forEachClozeBlock(text, (blk) => {
@@ -396,6 +412,7 @@ export default class AnkiHelperPlugin extends Plugin {
     else editor.setValue(out);
   }
 
+  // 将 Anki cloze 语法还原为用户配置的 marker 包裹形式。
   private clozeRestore(text: string): string {
     const marker = this.settings.clozeMarker || "==";
     return text.replace(/\{\{c\d+::([\s\S]*?)\}\}/g, (_m, inner) => `${marker}${inner}${marker}`);
