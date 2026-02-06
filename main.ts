@@ -7,7 +7,7 @@
 // 5. Ensure one blank line containing a single space between a list and the following paragraph
 // Trigger: run via Command Palette or a user-assigned hotkey
 
-import { App, Plugin, PluginSettingTab, Setting, MarkdownView, TFile, Notice } from "obsidian";
+import { App, Plugin, PluginSettingTab, Setting, MarkdownView, TFile, Notice, type CachedMetadata } from "obsidian";
 
 import { getLocale } from "./src/lang/helper";
 import type { LocaleText } from "./src/lang/types";
@@ -114,18 +114,29 @@ export default class AnkiHelperPlugin extends Plugin {
       return;
     }
 
+    if (this.settings.enableTargetDeck) {
+      const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
+      const location = this.settings.targetDeckLocation ?? "body";
+      if (location === "yaml") {
+        await this.ensureYamlTargetDeck(file, tpl);
+      } else {
+        await this.removeYamlTargetDeck(file);
+      }
+    }
+
     await this.app.vault.process(file, (raw) => {
       const lines = raw.split(/\r?\n/);
+      const cache = this.app.metadataCache.getFileCache(file);
       let changed = false;
 
       if (this.settings.enableTargetDeck) {
-        changed = this.ensureTargetDeck(lines, file) || changed;
+        changed = this.ensureTargetDeckInBody(lines, file, cache) || changed;
       }
       if (this.settings.enableHeadingOps) {
-        changed = this.rewriteHeadingsAndCollectLists(lines, file) || changed;
+        changed = this.rewriteHeadingsAndCollectLists(lines, file, cache) || changed;
       }
       if (this.settings.enableListTidy) {
-        changed = this.tidyLists(lines) || changed;
+        changed = this.tidyLists(lines, cache) || changed;
       }
 
       return changed ? lines.join("\n") : raw;
@@ -143,13 +154,55 @@ export default class AnkiHelperPlugin extends Plugin {
     return true;
   }
 
-  private ensureTargetDeck(lines: string[], file: TFile): boolean {
+  private getContentStartLine(lines: string[], cache?: CachedMetadata | null): number {
+    const end = cache?.frontmatterPosition?.end;
+    if (end && end.line >= 0 && end.line < lines.length) {
+      return end.line + 1;
+    }
+    return findYamlEnd(lines);
+  }
+
+  private getFirstHeadingLine(lines: string[], cache?: CachedMetadata | null): number {
+    const firstHeading = cache?.headings?.[0]?.position?.start.line;
+    if (firstHeading !== undefined && firstHeading >= 0 && firstHeading < lines.length) {
+      return firstHeading;
+    }
+    return lines.findIndex((l) => l.trim().startsWith("#"));
+  }
+
+  private async ensureYamlTargetDeck(file: TFile, value: string): Promise<boolean> {
+    let changed = false;
+    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+      const fm = frontmatter as Record<string, unknown>;
+      if (fm["TARGET DECK"] !== value) {
+        fm["TARGET DECK"] = value;
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  private async removeYamlTargetDeck(file: TFile): Promise<boolean> {
+    const cache = this.app.metadataCache.getFileCache(file);
+    if (!cache?.frontmatter || !Object.prototype.hasOwnProperty.call(cache.frontmatter, "TARGET DECK")) {
+      return false;
+    }
+
+    let changed = false;
+    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+      const fm = frontmatter as Record<string, unknown>;
+      if (Object.prototype.hasOwnProperty.call(fm, "TARGET DECK")) {
+        delete fm["TARGET DECK"];
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  private ensureTargetDeckInBody(lines: string[], file: TFile, cache?: CachedMetadata | null): boolean {
     const marker = "TARGET DECK";
     const tpl = this.settings.targetDeckTemplate.replace(/filename/g, file.basename);
-    const lineValue = `${marker}: ${tpl}`;
     const location = this.settings.targetDeckLocation ?? "body";
-
-    const getYamlEnd = () => (lines[0] === "---" ? lines.indexOf("---", 1) : -1);
 
     const removeBodyTargetDeck = (): boolean => {
       const idx = lines.findIndex((l) => l.trim() === marker);
@@ -170,40 +223,11 @@ export default class AnkiHelperPlugin extends Plugin {
       return true;
     };
 
-    const removeYamlTargetDeck = (end: number): boolean => {
-      for (let i = 1; i < end; i++) {
-        if (/^TARGET DECK\s*:/.test(lines[i])) {
-          lines.splice(i, 1);
-          return true;
-        }
-      }
-      return false;
-    };
-
-    const ensureYamlTargetDeck = (): boolean => {
-      const end = getYamlEnd();
-      if (end > 0) {
-        for (let i = 1; i < end; i++) {
-          if (/^TARGET DECK\s*:/.test(lines[i])) {
-            if (lines[i] !== lineValue) {
-              lines[i] = lineValue;
-              return true;
-            }
-            return false;
-          }
-        }
-        lines.splice(end, 0, lineValue);
-        return true;
-      }
-      lines.unshift("---", lineValue, "---", "");
-      return true;
-    };
-
     const ensureBodyTargetDeck = (): boolean => {
       if (lines.some((l) => l.trim() === marker)) return false;
-      let idx = findYamlEnd(lines);
+      let idx = this.getContentStartLine(lines, cache);
       if (idx === 0) {
-        const firstHeading = lines.findIndex((l) => l.trim().startsWith("#"));
+        const firstHeading = this.getFirstHeadingLine(lines, cache);
         if (firstHeading >= 0) idx = firstHeading;
       }
       if (idx > 0 && lines[idx - 1] === "---") {
@@ -214,25 +238,16 @@ export default class AnkiHelperPlugin extends Plugin {
       return true;
     };
 
-    if (location === "yaml") {
-      const changedYaml = ensureYamlTargetDeck();
-      const removedBody = removeBodyTargetDeck();
-      return changedYaml || removedBody;
-    }
-
-    const end = getYamlEnd();
-    const removedYaml = end > 0 ? removeYamlTargetDeck(end) : false;
-    const changedBody = ensureBodyTargetDeck();
-    return removedYaml || changedBody;
+    return location === "yaml" ? removeBodyTargetDeck() : ensureBodyTargetDeck();
   }
 
-  private rewriteHeadingsAndCollectLists(lines: string[], file: TFile): boolean {
+  private rewriteHeadingsAndCollectLists(lines: string[], file: TFile, cache?: CachedMetadata | null): boolean {
     let changed = false;
     const qaLvl = this.settings.headingLevel ?? 4;
     const clozeLvl = this.settings.clozeHeadingLevel ?? 5;
     const prefixes = new Set<string>(["#".repeat(qaLvl) + " ", "#".repeat(clozeLvl) + " "]);
     const noteName = file.basename;
-    const start = findYamlEnd(lines);
+    const start = this.getContentStartLine(lines, cache);
 
     const rawChars = this.settings.headingRemoveChars.trim() || "` < > [ ]";
     const tokens = rawChars.split(/\s+/).filter(Boolean);
@@ -276,7 +291,7 @@ export default class AnkiHelperPlugin extends Plugin {
     return changed;
   }
 
-  private tidyLists(lines: string[]): boolean {
+  private tidyLists(lines: string[], cache?: CachedMetadata | null): boolean {
     let changed = false;
 
     const isList = (l: string) => /^(\s*)([-+*]|\d+\.)\s*/.test(l);
@@ -284,7 +299,7 @@ export default class AnkiHelperPlugin extends Plugin {
     const isBlankLine = (l: string) => /^\s*$/.test(l);
     const isHtmlCmt = (l: string) => /^\s*<!--.*-->/.test(l);
 
-    const start = findYamlEnd(lines);
+    const start = this.getContentStartLine(lines, cache);
     for (let i = start; i < lines.length; i++) {
       if (!isList(lines[i])) continue;
 

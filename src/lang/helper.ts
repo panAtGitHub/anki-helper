@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import { getLanguage, type App } from "obsidian";
 
 import en from "./locale/en";
 import zh from "./locale/zh";
@@ -27,8 +27,8 @@ function pickLocaleFromLang(lang: string | null | undefined): LocaleKey {
 }
 
 export function detectLocale(app: App): LocaleKey {
-  const html = app.workspace?.containerEl?.ownerDocument?.documentElement;
-  return pickLocaleFromLang(html?.lang);
+  void app;
+  return pickLocaleFromLang(getLanguage());
 }
 
 export function getLocale(app: App, preference: LocalePreference = DEFAULT_LOCALE): LocaleText {
