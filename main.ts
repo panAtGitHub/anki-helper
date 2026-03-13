@@ -174,35 +174,62 @@ export default class AnkiHelperPlugin extends Plugin {
     return lines.findIndex((l) => l.trim().startsWith("#"));
   }
 
-  // 将 TARGET DECK 写入 YAML frontmatter（官方推荐方式：processFrontMatter）。
+  // 将 TARGET DECK 写入 YAML frontmatter，并保持为不带引号的裸值格式。
   private async ensureYamlTargetDeck(file: TFile, value: string): Promise<boolean> {
     let changed = false;
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-      const fm = frontmatter as Record<string, unknown>;
-      if (fm["TARGET DECK"] !== value) {
-        fm["TARGET DECK"] = value;
-        changed = true;
-      }
+    await this.app.vault.process(file, (raw) => {
+      const next = this.upsertYamlTargetDeckLine(raw, value);
+      changed = next !== raw;
+      return next;
     });
     return changed;
   }
 
-  // 从 YAML frontmatter 删除 TARGET DECK（原子更新，避免字符串删改）。
+  // 从 YAML frontmatter 删除 TARGET DECK，并清理多余空行。
   private async removeYamlTargetDeck(file: TFile): Promise<boolean> {
-    const cache = this.app.metadataCache.getFileCache(file);
-    if (!cache?.frontmatter || !Object.prototype.hasOwnProperty.call(cache.frontmatter, "TARGET DECK")) {
-      return false;
-    }
-
     let changed = false;
-    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-      const fm = frontmatter as Record<string, unknown>;
-      if (Object.prototype.hasOwnProperty.call(fm, "TARGET DECK")) {
-        delete fm["TARGET DECK"];
-        changed = true;
-      }
+    await this.app.vault.process(file, (raw) => {
+      const next = this.removeYamlTargetDeckLine(raw);
+      changed = next !== raw;
+      return next;
     });
     return changed;
+  }
+
+  private upsertYamlTargetDeckLine(raw: string, value: string): string {
+    const lines = raw.split(/\r?\n/);
+    const yamlEnd = findYamlEnd(lines);
+    const targetLine = `TARGET DECK: ${value}`;
+
+    if (yamlEnd > 0) {
+      const existingIndex = lines.findIndex((line, idx) => idx > 0 && idx < yamlEnd - 1 && /^TARGET DECK:\s*/.test(line));
+      if (existingIndex >= 0) {
+        if (lines[existingIndex] === targetLine) return raw;
+        lines[existingIndex] = targetLine;
+        return lines.join("\n");
+      }
+      lines.splice(yamlEnd - 1, 0, targetLine);
+      return lines.join("\n");
+    }
+
+    return ["---", targetLine, "---", "", ...lines].join("\n");
+  }
+
+  private removeYamlTargetDeckLine(raw: string): string {
+    const lines = raw.split(/\r?\n/);
+    const yamlEnd = findYamlEnd(lines);
+    if (yamlEnd === 0) return raw;
+
+    const filtered = lines.filter((line, idx) => !(idx > 0 && idx < yamlEnd - 1 && /^TARGET DECK:\s*/.test(line)));
+    if (filtered.length === lines.length) return raw;
+
+    if (filtered[0] === "---" && filtered[1] === "---") {
+      const rest = filtered.slice(2);
+      if (rest[0] === "") rest.shift();
+      return rest.join("\n");
+    }
+
+    return filtered.join("\n");
   }
 
   // 只处理正文里的 TARGET DECK 区块；YAML 改动在独立阶段完成。
