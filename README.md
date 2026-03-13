@@ -12,6 +12,7 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
 - 列表整理：删除空的列表项；在列表与后续段落之间自动插入一行（仅含空格），便于在 Anki 中更美观显示。
 - Cloze 转换：将对称标记（默认 `==`，也可用 `**`、`$$` 等）转换为 `{{cN::…}}`，支持“同时出现 (c1)”与“按序出现 (c1,c2,…)”；支持将 `{{cN::…}}` 还原为自定义标记。
 - 作用范围：支持全部、仅包含、排除路径三种模式，支持文件夹（以 `/` 结尾）与单文件精确匹配。
+- 定时批处理：可按 15/30/60 分钟固定间隔自动检测并批量处理当前作用范围内的脏文件；默认关闭，启动后不会立即执行第一轮。
 - 正则助手：根据你选择的“问答题/填空题标题级别”，一键复制 obsidian_to_anki 的 Custom Regexp 语法。
 - 多语言：设置页支持中文与英文。
 
@@ -55,6 +56,10 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
   - 示例：
     - 仅包含：`Notes/Anki/`、`Inbox/Todo.md`
     - 排除：`Archive/`、`Templates/Card.md`
+- 定时批处理：
+  - 开关：是否按固定间隔自动运行批处理。
+  - 间隔：支持 15 / 30 / 60 分钟。
+  - 行为：仅处理当前作用范围内的脏文件；插件启动后不会立即执行第一轮。
 
 ## 快速开始 / Quick Start
 

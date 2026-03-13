@@ -10,6 +10,8 @@ export interface AnkiHelperSettings {
   runScope: "all" | "include" | "exclude";
   includePaths: string[];
   excludePaths: string[];
+  enableScheduledBatch: boolean;
+  scheduledBatchIntervalMinutes: 15 | 30 | 60;
   clozeMarker?: string;
 }
 
@@ -25,5 +27,7 @@ export const DEFAULT_SETTINGS: AnkiHelperSettings = {
   runScope: "all",
   includePaths: [],
   excludePaths: [],
+  enableScheduledBatch: false,
+  scheduledBatchIntervalMinutes: 30,
   clozeMarker: "==",
 };

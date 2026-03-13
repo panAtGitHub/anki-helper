@@ -47,6 +47,8 @@ export default class AnkiHelperPlugin extends Plugin {
   private excludePatterns: RegExp[] = [];
   private pluginData: PluginData = {};
   private batchState: BatchState = normalizeBatchState(null);
+  private scheduledBatchTimerId: number | null = null;
+  private currentBatchRun: Promise<void> | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -72,18 +74,7 @@ export default class AnkiHelperPlugin extends Plugin {
       id: "run-batch",
       name: locale.commandBatchInsertName,
       callback: () => {
-        void runBatchProcess({
-          app: this.app,
-          settings: this.settings,
-          locale: this.getLocaleText(),
-          isInScope: (file) => this.isInScope(file),
-          processFile: (file, options) => this.processFile(file, options),
-          getBatchState: () => this.batchState,
-          saveBatchState: async (state) => {
-            this.batchState = normalizeBatchState(state);
-            await this.persistPluginData();
-          },
-        });
+        void this.executeBatchProcess();
       },
     });
 
@@ -104,9 +95,12 @@ export default class AnkiHelperPlugin extends Plugin {
     });
 
     this.addSettingTab(new AnkiHelperSettingTab(this.app, this));
+    this.configureScheduledBatch();
   }
 
-  onunload(): void {}
+  onunload(): void {
+    this.clearScheduledBatchTimer();
+  }
 
   private async processFile(file: TFile, options?: { skipScopeCheck?: boolean }): Promise<void> {
     if (!options?.skipScopeCheck && !this.isInScope(file)) {
@@ -369,6 +363,54 @@ export default class AnkiHelperPlugin extends Plugin {
 
   private getActiveFile(): TFile | null {
     return this.app.workspace.getActiveFile();
+  }
+
+  async executeBatchProcess(): Promise<void> {
+    if (this.currentBatchRun) {
+      await this.currentBatchRun;
+      return;
+    }
+
+    this.currentBatchRun = (async () => {
+      await runBatchProcess({
+        app: this.app,
+        settings: this.settings,
+        locale: this.getLocaleText(),
+        isInScope: (file) => this.isInScope(file),
+        processFile: (file, options) => this.processFile(file, options),
+        getBatchState: () => this.batchState,
+        saveBatchState: async (state) => {
+          this.batchState = normalizeBatchState(state);
+          await this.persistPluginData();
+        },
+      });
+    })();
+
+    try {
+      await this.currentBatchRun;
+    } finally {
+      this.currentBatchRun = null;
+    }
+  }
+
+  configureScheduledBatch(): void {
+    this.clearScheduledBatchTimer();
+    if (!this.settings.enableScheduledBatch) {
+      return;
+    }
+
+    const intervalMs = this.settings.scheduledBatchIntervalMinutes * 60 * 1000;
+    const timerId = window.setInterval(() => {
+      void this.executeBatchProcess();
+    }, intervalMs);
+    this.scheduledBatchTimerId = this.registerInterval(timerId);
+  }
+
+  private clearScheduledBatchTimer(): void {
+    if (this.scheduledBatchTimerId !== null) {
+      window.clearInterval(this.scheduledBatchTimerId);
+      this.scheduledBatchTimerId = null;
+    }
   }
 
   private buildClozeMarkerRegex(): RegExp {
@@ -733,6 +775,46 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       excludeSetting.settingEl.toggle(mode === "exclude");
     };
     updateScopeUI();
+
+    const cardSchedule = createFoldCard(t.card6Title, false);
+    cardSchedule.content.createEl("div", { cls: "ah-card-desc", text: t.card6Desc });
+    let scheduleIntervalSetting: Setting;
+
+    new Setting(cardSchedule.content)
+      .setName(t.enableScheduledBatchName)
+      .setDesc(t.enableScheduledBatchDesc)
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.enableScheduledBatch).onChange((v) => {
+          this.plugin.settings.enableScheduledBatch = v;
+          scheduleIntervalSetting.setDisabled(!v);
+          void this.plugin.saveSettings().then(
+            () => this.plugin.configureScheduledBatch(),
+            (err) => console.error("Failed to save settings", err),
+          );
+        }),
+      );
+
+    scheduleIntervalSetting = new Setting(cardSchedule.content)
+      .setName(t.scheduledBatchIntervalName)
+      .setDesc(t.scheduledBatchIntervalDesc)
+      .addDropdown((d) =>
+        d
+          .addOptions({
+            "15": t.scheduledBatchInterval15,
+            "30": t.scheduledBatchInterval30,
+            "60": t.scheduledBatchInterval60,
+          })
+          .setValue(String(this.plugin.settings.scheduledBatchIntervalMinutes))
+          .onChange((v) => {
+            if (v !== "15" && v !== "30" && v !== "60") return;
+            this.plugin.settings.scheduledBatchIntervalMinutes = Number(v) as 15 | 30 | 60;
+            void this.plugin.saveSettings().then(
+              () => this.plugin.configureScheduledBatch(),
+              (err) => console.error("Failed to save settings", err),
+            );
+          }),
+      );
+    scheduleIntervalSetting.setDisabled(!this.plugin.settings.enableScheduledBatch);
   }
 
   private createDeckTemplateDescription(t: LocaleText): DocumentFragment {

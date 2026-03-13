@@ -50,6 +50,15 @@ export interface LocaleText {
   excludeName: string;
   excludeDesc: string;
   excludePlaceholder: string;
+  card6Title: string;
+  card6Desc: string;
+  enableScheduledBatchName: string;
+  enableScheduledBatchDesc: string;
+  scheduledBatchIntervalName: string;
+  scheduledBatchIntervalDesc: string;
+  scheduledBatchInterval15: string;
+  scheduledBatchInterval30: string;
+  scheduledBatchInterval60: string;
   commandInsertName: string;
   commandBatchInsertName: string;
   commandClozeOneName: string;
