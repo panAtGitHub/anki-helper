@@ -51,11 +51,14 @@ export interface LocaleText {
   excludeDesc: string;
   excludePlaceholder: string;
   commandInsertName: string;
+  commandBatchInsertName: string;
   commandClozeOneName: string;
   commandClozeSeqName: string;
   commandClozeRestoreName: string;
   noticeNoActiveFile: string;
   noticeNotMarkdown: string;
   noticeSkippedScope: string;
+  noticeBatchNoEligibleFiles: string;
+  noticeBatchSummary: string;
   noticeNoMarkdownView: string;
 }

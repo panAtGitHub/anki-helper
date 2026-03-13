@@ -53,12 +53,15 @@ const zh: LocaleText = {
   excludeDesc: "相对库根路径，每行一条。以 `/` 结尾表示文件夹前缀匹配；不以 `/` 结尾则精确到文件路径。",
   excludePlaceholder: "例：\nNotes/Anki/\nInbox/Todo.md",
   commandInsertName: "插入牌组（若无）并插入标题级回链；",
+  commandBatchInsertName: "批量处理作用范围内全部文件：插入牌组并插入标题级回链",
   commandClozeOneName: "填空题转换：标记统一转化成{{c1::…}} (挖空答案在卡片「同时」出现)",
   commandClozeSeqName: "填空题转换：标记依次转化成{{c1::…}}、{{c2::…}}… (挖空答案在卡片「按顺序」出现)",
   commandClozeRestoreName: "填空题转换：将挖空标记转回成原始标记",
   noticeNoActiveFile: "Anki Helper：未找到当前打开的文件。",
   noticeNotMarkdown: "Anki Helper：当前文件不是 Markdown。",
   noticeSkippedScope: "Anki Helper：已跳过（不在作用范围内）。",
+  noticeBatchNoEligibleFiles: "Anki Helper：当前作用范围内没有可处理的 Markdown 文件。",
+  noticeBatchSummary: "Anki Helper：批量处理完成。候选 {candidates}，脏文件 {dirty}，已处理 {processed}，已跳过 {skipped}，失败 {failed}。",
   noticeNoMarkdownView: "未找到当前的 Markdown 视图。",
 };
 

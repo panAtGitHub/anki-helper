@@ -59,12 +59,16 @@ const en: LocaleText = {
   excludeDesc: "Paths relative to vault root, one per line. Ending with '/' matches folder prefix; otherwise it's an exact file path.",
   excludePlaceholder: "Example:\nNotes/Anki/\nInbox/Todo.md",
   commandInsertName: "Insert deck & backlink",
+  commandBatchInsertName: "Batch process all in-scope files: insert deck & backlink",
   commandClozeOneName: "Cloze: convert markers → {{c1::…}} (answers appear simultaneously)",
   commandClozeSeqName: "Cloze: convert markers → {{c1::…}}, {{c2::…}}… (answers appear sequentially)",
   commandClozeRestoreName: "Cloze: restore {{cN::…}} → markers",
   noticeNoActiveFile: "Anki helper: no active file.",
   noticeNotMarkdown: "Anki helper: active file is not a Markdown file.",
   noticeSkippedScope: "Anki helper: skipped (out of scope).",
+  noticeBatchNoEligibleFiles: "Anki helper: no Markdown files matched the current scope.",
+  noticeBatchSummary:
+    "Anki helper: batch run complete. Candidates {candidates}, dirty {dirty}, processed {processed}, skipped {skipped}, failed {failed}.",
   noticeNoMarkdownView: "No active Markdown view.",
 };
 

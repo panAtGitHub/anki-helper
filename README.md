@@ -23,6 +23,10 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
   - 清理卡片标题中的指定字符；
   - 整理列表与段落的空行；
   - 仅处理当前笔记，支持按“作用范围”设置过滤文件。
+- Batch process all in-scope files: insert deck & backlink：
+  - 对当前“作用范围”内的全部 Markdown 文件批量执行与单文件命令相同的处理；
+  - `include` 模式下优先定向扫描指定目录/文件，减少无关遍历；
+  - 使用增量索引，只重跑新增、已修改或受设置变更影响的文件。
 - Cloze: Convert markers → `{{c1::…}}`（答案同时出现）。
 - Cloze: Convert markers → `{{c1::…}}, {{c2::…}}…`（答案按顺序出现）。
 - Cloze: Restore `{{cN::…}}` → markers（将 `{{cN::…}}` 还原为自定义对称标记）。
@@ -59,6 +63,7 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
    - 选择问答题/填空题的标题级别，并将提供的 Custom Regexp 复制到 obsidian_to_anki；
    - 根据需要配置 TARGET DECK 模板、标题清理字符、列表整理与作用范围。
 2) 在要处理的笔记中，运行命令面板里的 “Insert Deck & Backlink”。
+   - 若要一次处理作用范围内的全部文件，运行批处理命令 “Batch process all in-scope files: insert deck & backlink”。
 3) 需要挖空时，选中文本（或不选以处理全文），运行所需的 Cloze 命令。
 
 ## 安装 / Install
@@ -79,3 +84,4 @@ Run `node scripts/scope-demo.js` to check which sample paths fall inside or outs
 - 主要与 obsidian_to_anki 配合使用；设置页内置了该插件所需的 Custom Regexp 生成与复制按钮。
 - 标题级回链为 `[[笔记名#标题]]` 形式；标题清理仅作用于标题本身，不改动正文。
 - 列表整理会删除空的列表项，并在列表与后续段落之间插入一行仅含空格的占位行以优化导出显示。
+- 批处理逻辑位于 `src/batch/batch-processor.ts`，并在插件 `data.json` 中维护增量索引；首次运行会建索引，后续只处理变更文件。

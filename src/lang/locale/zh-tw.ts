@@ -55,12 +55,15 @@ const zhTw: LocaleText = {
   excludeDesc: "相對庫根路徑，每行一條。以 `/` 結尾表示資料夾前綴比對；不以 `/` 結尾則精確到檔案路徑。",
   excludePlaceholder: "例：\nNotes/Anki/\nInbox/Todo.md",
   commandInsertName: "插入牌組（若無）並插入標題級回鏈；",
+  commandBatchInsertName: "批次處理作用範圍內全部檔案：插入牌組並插入標題級回鏈",
   commandClozeOneName: "填空題轉換：標記統一轉成 {{c1::…}}（挖空答案同時出現）",
   commandClozeSeqName: "填空題轉換：標記依序轉成 {{c1::…}}、{{c2::…}}…（挖空答案按順序出現）",
   commandClozeRestoreName: "填空題轉換：將挖空標記還原為原始標記",
   noticeNoActiveFile: "Anki Helper：未找到目前開啟的檔案。",
   noticeNotMarkdown: "Anki Helper：目前檔案不是 Markdown。",
   noticeSkippedScope: "Anki Helper：已跳過（不在作用範圍內）。",
+  noticeBatchNoEligibleFiles: "Anki Helper：目前作用範圍內沒有可處理的 Markdown 檔案。",
+  noticeBatchSummary: "Anki Helper：批次處理完成。候選 {candidates}，髒檔案 {dirty}，已處理 {processed}，已跳過 {skipped}，失敗 {failed}。",
   noticeNoMarkdownView: "未找到目前的 Markdown 視圖。",
 };
 

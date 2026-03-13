@@ -9,17 +9,10 @@
 
 import { App, Plugin, PluginSettingTab, Setting, MarkdownView, TFile, Notice, type CachedMetadata } from "obsidian";
 
+import { normalizeBatchState, runBatchProcess, type BatchState } from "./src/batch/batch-processor";
 import { getLocale } from "./src/lang/helper";
 import type { LocaleText } from "./src/lang/types";
-
-// 兜底解析 YAML 结束行（仅在 metadata cache 不可用时使用）。
-function findYamlEnd(lines: string[]): number {
-  if (lines[0] === "---") {
-    const end = lines.indexOf("---", 1);
-    return end >= 0 ? end + 1 : 0;
-  }
-  return 0;
-}
+import { DEFAULT_SETTINGS, type AnkiHelperSettings } from "./src/plugin-types";
 
 // 将简单 glob（支持 * 与 **）转换为正则，用于路径过滤。
 function globToRegExp(pattern: string): RegExp {
@@ -34,40 +27,26 @@ function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-interface AnkiHelperSettings {
-  headingLevel: number;
-  clozeHeadingLevel: number;
-  headingRemoveChars: string;
-  targetDeckTemplate: string;
-  enableTargetDeck: boolean;
-  targetDeckLocation: "body" | "yaml";
-  enableHeadingOps: boolean;
-  enableListTidy: boolean;
-  runScope: "all" | "include" | "exclude";
-  includePaths: string[];
-  excludePaths: string[];
-  clozeMarker?: string;
+// 兜底解析 YAML 结束行（仅在 metadata cache 不可用时使用）。
+function findYamlEnd(lines: string[]): number {
+  if (lines[0] === "---") {
+    const end = lines.indexOf("---", 1);
+    return end >= 0 ? end + 1 : 0;
+  }
+  return 0;
 }
 
-const DEFAULT_SETTINGS: AnkiHelperSettings = {
-  headingLevel: 4,
-  clozeHeadingLevel: 5,
-  headingRemoveChars: "` < > [ ]",
-  targetDeckTemplate: "[[anki]]::[[filename]]",
-  enableTargetDeck: true,
-  targetDeckLocation: "yaml",
-  enableHeadingOps: true,
-  enableListTidy: true,
-  runScope: "all",
-  includePaths: [],
-  excludePaths: [],
-  clozeMarker: "==",
+type PluginData = Partial<AnkiHelperSettings> & {
+  batchState?: BatchState;
+  [key: string]: unknown;
 };
 
 export default class AnkiHelperPlugin extends Plugin {
   settings!: AnkiHelperSettings;
   private includePatterns: RegExp[] = [];
   private excludePatterns: RegExp[] = [];
+  private pluginData: PluginData = {};
+  private batchState: BatchState = normalizeBatchState(null);
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -87,6 +66,24 @@ export default class AnkiHelperPlugin extends Plugin {
           return;
         }
         void this.processFile(file);
+      },
+    });
+    this.addCommand({
+      id: "run-batch",
+      name: locale.commandBatchInsertName,
+      callback: () => {
+        void runBatchProcess({
+          app: this.app,
+          settings: this.settings,
+          locale: this.getLocaleText(),
+          isInScope: (file) => this.isInScope(file),
+          processFile: (file, options) => this.processFile(file, options),
+          getBatchState: () => this.batchState,
+          saveBatchState: async (state) => {
+            this.batchState = normalizeBatchState(state);
+            await this.persistPluginData();
+          },
+        });
       },
     });
 
@@ -111,8 +108,8 @@ export default class AnkiHelperPlugin extends Plugin {
 
   onunload(): void {}
 
-  private async processFile(file: TFile): Promise<void> {
-    if (!this.isInScope(file)) {
+  private async processFile(file: TFile, options?: { skipScopeCheck?: boolean }): Promise<void> {
+    if (!options?.skipScopeCheck && !this.isInScope(file)) {
       new Notice(this.getLocaleText().noticeSkippedScope);
       return;
     }
@@ -433,13 +430,24 @@ export default class AnkiHelperPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const loaded = (await this.loadData()) as Partial<AnkiHelperSettings> | null;
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded ?? {});
+    const loaded = (await this.loadData()) as PluginData | null;
+    this.pluginData = loaded ?? {};
+    this.batchState = normalizeBatchState(this.pluginData.batchState);
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, this.pluginData);
     this.updateScopePatterns();
   }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    this.pluginData = {
+      ...this.pluginData,
+      ...this.settings,
+      batchState: this.batchState,
+    };
+    await this.saveData(this.pluginData);
+  }
+
+  private async persistPluginData(): Promise<void> {
+    await this.saveSettings();
   }
 
   updateScopePatterns() {
@@ -582,12 +590,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       );
     new Setting(cardDeck.content)
       .setName(t.deckTemplateName)
-      .setDesc(
-        createFragment((frag) => {
-          frag.createEl("div", { text: t.deckTemplateDesc1 });
-          frag.createEl("div", { text: t.deckTemplateDesc2 });
-        }),
-      )
+      .setDesc(this.createDeckTemplateDescription(t))
       .addText((text) =>
         text
           .setPlaceholder(t.deckTemplatePlaceholder)
@@ -703,5 +706,15 @@ class AnkiHelperSettingTab extends PluginSettingTab {
       excludeSetting.settingEl.toggle(mode === "exclude");
     };
     updateScopeUI();
+  }
+
+  private createDeckTemplateDescription(t: LocaleText): DocumentFragment {
+    const fragment = document.createDocumentFragment();
+    const first = document.createElement("div");
+    first.textContent = t.deckTemplateDesc1;
+    const second = document.createElement("div");
+    second.textContent = t.deckTemplateDesc2;
+    fragment.append(first, second);
+    return fragment;
   }
 }
