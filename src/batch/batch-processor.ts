@@ -25,6 +25,7 @@ export interface BatchDeps {
   app: App;
   settings: AnkiHelperSettings;
   locale: LocaleText;
+  notifyMode?: "always" | "silent-unless-failed";
   isInScope: (file: TFile) => boolean;
   processFile: (file: TFile, options?: { skipScopeCheck?: boolean }) => Promise<void>;
   getBatchState: () => BatchState;
@@ -46,7 +47,7 @@ export function normalizeBatchState(raw: unknown): BatchState {
 }
 
 export async function runBatchProcess(deps: BatchDeps): Promise<BatchSummary> {
-  const { app, locale, settings } = deps;
+  const { app, locale, notifyMode = "always", settings } = deps;
   const batchState = normalizeBatchState(deps.getBatchState());
   const configSig = createConfigSignature(settings);
   const candidates = collectCandidates(app, settings, deps.isInScope);
@@ -54,7 +55,9 @@ export async function runBatchProcess(deps: BatchDeps): Promise<BatchSummary> {
   pruneBatchState(batchState, candidates);
 
   if (candidates.length === 0) {
-    new Notice(locale.noticeBatchNoEligibleFiles);
+    if (notifyMode === "always") {
+      new Notice(locale.noticeBatchNoEligibleFiles);
+    }
     await deps.saveBatchState(batchState);
     return { candidates: 0, dirty: 0, processed: 0, skipped: 0, failed: 0 };
   }
@@ -105,7 +108,11 @@ export async function runBatchProcess(deps: BatchDeps): Promise<BatchSummary> {
   }
 
   await deps.saveBatchState(batchState);
-  new Notice(formatBatchSummary(locale.noticeBatchSummary, summary));
+  if (notifyMode === "always") {
+    new Notice(formatBatchSummary(locale.noticeBatchSummary, summary));
+  } else if (summary.failed > 0) {
+    new Notice(formatBatchSummary(locale.noticeScheduledBatchFailed, summary));
+  }
   return summary;
 }
 

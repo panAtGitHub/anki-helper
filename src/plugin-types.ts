@@ -12,6 +12,7 @@ export interface AnkiHelperSettings {
   excludePaths: string[];
   enableScheduledBatch: boolean;
   scheduledBatchIntervalMinutes: 15 | 30 | 60;
+  silentScheduledBatch: boolean;
   clozeMarker?: string;
 }
 
@@ -29,5 +30,6 @@ export const DEFAULT_SETTINGS: AnkiHelperSettings = {
   excludePaths: [],
   enableScheduledBatch: false,
   scheduledBatchIntervalMinutes: 30,
+  silentScheduledBatch: true,
   clozeMarker: "==",
 };

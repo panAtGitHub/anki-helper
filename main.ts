@@ -74,7 +74,7 @@ export default class AnkiHelperPlugin extends Plugin {
       id: "run-batch",
       name: locale.commandBatchInsertName,
       callback: () => {
-        void this.executeBatchProcess();
+        void this.executeBatchProcess("manual");
       },
     });
 
@@ -365,9 +365,11 @@ export default class AnkiHelperPlugin extends Plugin {
     return this.app.workspace.getActiveFile();
   }
 
-  async executeBatchProcess(): Promise<void> {
+  async executeBatchProcess(source: "manual" | "scheduled"): Promise<void> {
     if (this.currentBatchRun) {
-      await this.currentBatchRun;
+      if (source === "manual") {
+        await this.currentBatchRun;
+      }
       return;
     }
 
@@ -376,6 +378,7 @@ export default class AnkiHelperPlugin extends Plugin {
         app: this.app,
         settings: this.settings,
         locale: this.getLocaleText(),
+        notifyMode: this.getBatchNotifyMode(source),
         isInScope: (file) => this.isInScope(file),
         processFile: (file, options) => this.processFile(file, options),
         getBatchState: () => this.batchState,
@@ -401,7 +404,7 @@ export default class AnkiHelperPlugin extends Plugin {
 
     const intervalMs = this.settings.scheduledBatchIntervalMinutes * 60 * 1000;
     const timerId = window.setInterval(() => {
-      void this.executeBatchProcess();
+      void this.executeBatchProcess("scheduled");
     }, intervalMs);
     this.scheduledBatchTimerId = this.registerInterval(timerId);
   }
@@ -411,6 +414,13 @@ export default class AnkiHelperPlugin extends Plugin {
       window.clearInterval(this.scheduledBatchTimerId);
       this.scheduledBatchTimerId = null;
     }
+  }
+
+  private getBatchNotifyMode(source: "manual" | "scheduled"): "always" | "silent-unless-failed" {
+    if (source === "scheduled" && this.settings.silentScheduledBatch) {
+      return "silent-unless-failed";
+    }
+    return "always";
   }
 
   private buildClozeMarkerRegex(): RegExp {
@@ -779,6 +789,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
     const cardSchedule = createFoldCard(t.card6Title, false);
     cardSchedule.content.createEl("div", { cls: "ah-card-desc", text: t.card6Desc });
     let scheduleIntervalSetting: Setting;
+    let scheduleSilentSetting: Setting;
 
     new Setting(cardSchedule.content)
       .setName(t.enableScheduledBatchName)
@@ -787,6 +798,7 @@ class AnkiHelperSettingTab extends PluginSettingTab {
         tg.setValue(this.plugin.settings.enableScheduledBatch).onChange((v) => {
           this.plugin.settings.enableScheduledBatch = v;
           scheduleIntervalSetting.setDisabled(!v);
+          scheduleSilentSetting.setDisabled(!v);
           void this.plugin.saveSettings().then(
             () => this.plugin.configureScheduledBatch(),
             (err) => console.error("Failed to save settings", err),
@@ -815,6 +827,17 @@ class AnkiHelperSettingTab extends PluginSettingTab {
           }),
       );
     scheduleIntervalSetting.setDisabled(!this.plugin.settings.enableScheduledBatch);
+
+    scheduleSilentSetting = new Setting(cardSchedule.content)
+      .setName(t.silentScheduledBatchName)
+      .setDesc(t.silentScheduledBatchDesc)
+      .addToggle((tg) =>
+        tg.setValue(this.plugin.settings.silentScheduledBatch).onChange((v) => {
+          this.plugin.settings.silentScheduledBatch = v;
+          void this.plugin.saveSettings().catch((err) => console.error("Failed to save settings", err));
+        }),
+      );
+    scheduleSilentSetting.setDisabled(!this.plugin.settings.enableScheduledBatch);
   }
 
   private createDeckTemplateDescription(t: LocaleText): DocumentFragment {

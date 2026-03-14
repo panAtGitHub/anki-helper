@@ -67,6 +67,9 @@ const en: LocaleText = {
   scheduledBatchInterval15: "15 minutes",
   scheduledBatchInterval30: "30 minutes",
   scheduledBatchInterval60: "60 minutes",
+  silentScheduledBatchName: "Silent scheduled batch mode",
+  silentScheduledBatchDesc:
+    "Only affects scheduled batch runs. When enabled, successful runs and empty runs stay silent; only failures show a notice. Manual batch runs still show summaries.",
   commandInsertName: "Insert deck & backlink",
   commandBatchInsertName: "Batch process all in-scope files: insert deck & backlink",
   commandClozeOneName: "Cloze: convert markers → {{c1::…}} (answers appear simultaneously)",
@@ -78,6 +81,8 @@ const en: LocaleText = {
   noticeBatchNoEligibleFiles: "Anki helper: no Markdown files matched the current scope.",
   noticeBatchSummary:
     "Anki helper: batch run complete. Candidates {candidates}, dirty {dirty}, processed {processed}, skipped {skipped}, failed {failed}.",
+  noticeScheduledBatchFailed:
+    "Anki helper: scheduled batch run had failures. Candidates {candidates}, dirty {dirty}, processed {processed}, skipped {skipped}, failed {failed}.",
   noticeNoMarkdownView: "No active Markdown view.",
 };
 

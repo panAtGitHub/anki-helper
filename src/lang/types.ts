@@ -59,6 +59,8 @@ export interface LocaleText {
   scheduledBatchInterval15: string;
   scheduledBatchInterval30: string;
   scheduledBatchInterval60: string;
+  silentScheduledBatchName: string;
+  silentScheduledBatchDesc: string;
   commandInsertName: string;
   commandBatchInsertName: string;
   commandClozeOneName: string;
@@ -69,5 +71,6 @@ export interface LocaleText {
   noticeSkippedScope: string;
   noticeBatchNoEligibleFiles: string;
   noticeBatchSummary: string;
+  noticeScheduledBatchFailed: string;
   noticeNoMarkdownView: string;
 }

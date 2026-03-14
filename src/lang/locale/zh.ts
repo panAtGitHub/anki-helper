@@ -61,6 +61,8 @@ const zh: LocaleText = {
   scheduledBatchInterval15: "15 分钟",
   scheduledBatchInterval30: "30 分钟",
   scheduledBatchInterval60: "60 分钟",
+  silentScheduledBatchName: "定时批处理静默模式",
+  silentScheduledBatchDesc: "仅影响定时批处理。开启后成功和无匹配文件时不提示，仅失败时提示；手动批处理仍显示汇总。",
   commandInsertName: "插入牌组（若无）并插入标题级回链；",
   commandBatchInsertName: "批量处理作用范围内全部文件：插入牌组并插入标题级回链",
   commandClozeOneName: "填空题转换：标记统一转化成{{c1::…}} (挖空答案在卡片「同时」出现)",
@@ -71,6 +73,7 @@ const zh: LocaleText = {
   noticeSkippedScope: "Anki Helper：已跳过（不在作用范围内）。",
   noticeBatchNoEligibleFiles: "Anki Helper：当前作用范围内没有可处理的 Markdown 文件。",
   noticeBatchSummary: "Anki Helper：批量处理完成。候选 {candidates}，脏文件 {dirty}，已处理 {processed}，已跳过 {skipped}，失败 {failed}。",
+  noticeScheduledBatchFailed: "Anki Helper：定时批处理存在失败。候选 {candidates}，脏文件 {dirty}，已处理 {processed}，已跳过 {skipped}，失败 {failed}。",
   noticeNoMarkdownView: "未找到当前的 Markdown 视图。",
 };
 
