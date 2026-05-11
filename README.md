@@ -31,7 +31,7 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
   - 使用增量索引，只重跑新增、已修改或受设置变更影响的文件。
 - 删除标题级回链：
   - 仅处理当前笔记，支持按“作用范围”设置过滤文件；
-  - 删除“问答题标题级别”和“填空题标题级别”下方紧邻的 `[[Note#Heading]]` 标题级回链；
+  - 删除当前文件正文中所有独立一行的 `[[Note#Heading]]` 标题级回链；
   - 不修改 `TARGET DECK`、标题文本或列表空行。
 - Cloze: Convert markers → `{{c1::…}}`（答案同时出现）。
 - Cloze: Convert markers → `{{c1::…}}, {{c2::…}}…`（答案按顺序出现）。

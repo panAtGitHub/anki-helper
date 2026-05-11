@@ -352,39 +352,14 @@ export default class AnkiHelperPlugin extends Plugin {
     return changed;
   }
 
-  private removeHeadingBacklinksInLines(lines: string[], file: TFile, cache?: CachedMetadata | null): boolean {
+  private removeHeadingBacklinksInLines(lines: string[], _file: TFile, cache?: CachedMetadata | null): boolean {
     let changed = false;
-    const qaLvl = this.settings.headingLevel ?? 4;
-    const clozeLvl = this.settings.clozeHeadingLevel ?? 5;
-    const prefixes = new Set<string>(["#".repeat(qaLvl) + " ", "#".repeat(clozeLvl) + " "]);
-    const noteName = file.basename;
     const start = this.getContentStartLine(lines, cache);
+    const headingBacklinkRegex = /^\[\[[^\]]+#[^\]]+\]\]$/;
 
-    const rawChars = this.settings.headingRemoveChars.trim() || "` < > [ ]";
-    const tokens = rawChars.split(/\s+/).filter(Boolean);
-    const pattern = tokens.length ? tokens.map(escapeRegExp).join("|") : "`|<|>|\\[|\\]";
-    const removeRegex = new RegExp(pattern, "g");
-
-    for (let i = start; i < lines.length; i++) {
-      const line = lines[i];
-
-      let hPrefix: string | null = null;
-      for (const p of prefixes) {
-        if (line.startsWith(p)) {
-          hPrefix = p;
-          break;
-        }
-      }
-      if (!hPrefix) continue;
-
-      const rawHeading = line.slice(hPrefix.length);
-      const cleanHeading = rawHeading.replace(removeRegex, "").trim();
-      const backlink = `[[${noteName}#${cleanHeading}]]`;
-
-      let j = i + 1;
-      while (j < lines.length && lines[j].trim() === "") j++;
-      if (j < lines.length && lines[j].trim() === backlink) {
-        lines.splice(j, 1);
+    for (let i = lines.length - 1; i >= start; i--) {
+      if (headingBacklinkRegex.test(lines[i].trim())) {
+        lines.splice(i, 1);
         changed = true;
       }
     }
