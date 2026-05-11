@@ -356,9 +356,10 @@ export default class AnkiHelperPlugin extends Plugin {
     let changed = false;
     const start = this.getContentStartLine(lines, cache);
     const headingBacklinkRegex = /^\[\[[^\]]+#[^\]]+\]\]$/;
+    const markdownHeadingRegex = /^#{1,6}\s+\S/;
 
-    for (let i = lines.length - 1; i >= start; i--) {
-      if (headingBacklinkRegex.test(lines[i].trim())) {
+    for (let i = lines.length - 1; i > start; i--) {
+      if (headingBacklinkRegex.test(lines[i].trim()) && markdownHeadingRegex.test(lines[i - 1])) {
         lines.splice(i, 1);
         changed = true;
       }
