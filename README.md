@@ -29,6 +29,10 @@ An enhancement plugin that pairs with obsidian_to_anki for workflows where headi
   - 对当前“作用范围”内的全部 Markdown 文件批量执行与单文件命令相同的处理；
   - `include` 模式下优先定向扫描指定目录/文件，减少无关遍历；
   - 使用增量索引，只重跑新增、已修改或受设置变更影响的文件。
+- 删除标题级回链：
+  - 仅处理当前笔记，支持按“作用范围”设置过滤文件；
+  - 删除“问答题标题级别”和“填空题标题级别”下方紧邻的 `[[Note#Heading]]` 标题级回链；
+  - 不修改 `TARGET DECK`、标题文本或列表空行。
 - Cloze: Convert markers → `{{c1::…}}`（答案同时出现）。
 - Cloze: Convert markers → `{{c1::…}}, {{c2::…}}…`（答案按顺序出现）。
 - Cloze: Restore `{{cN::…}}` → markers（将 `{{cN::…}}` 还原为自定义对称标记）。

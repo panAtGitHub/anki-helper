@@ -65,6 +65,7 @@ const zh: LocaleText = {
   silentScheduledBatchDesc: "仅影响定时批处理。开启后成功和无匹配文件时不提示，仅失败时提示；手动批处理仍显示汇总。",
   commandInsertName: "插入牌组（若无）并插入标题级回链；",
   commandBatchInsertName: "批量处理作用范围内全部文件：插入牌组并插入标题级回链",
+  commandRemoveHeadingBacklinksName: "删除标题级回链",
   commandClozeOneName: "填空题转换：标记统一转化成{{c1::…}} (挖空答案在卡片「同时」出现)",
   commandClozeSeqName: "填空题转换：标记依次转化成{{c1::…}}、{{c2::…}}… (挖空答案在卡片「按顺序」出现)",
   commandClozeRestoreName: "填空题转换：将挖空标记转回成原始标记",

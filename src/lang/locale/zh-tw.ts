@@ -67,6 +67,7 @@ const zhTw: LocaleText = {
   silentScheduledBatchDesc: "僅影響定時批次處理。開啟後成功和無匹配檔案時不提示，僅失敗時提示；手動批次處理仍顯示摘要。",
   commandInsertName: "插入牌組（若無）並插入標題級回鏈；",
   commandBatchInsertName: "批次處理作用範圍內全部檔案：插入牌組並插入標題級回鏈",
+  commandRemoveHeadingBacklinksName: "刪除標題級回鏈",
   commandClozeOneName: "填空題轉換：標記統一轉成 {{c1::…}}（挖空答案同時出現）",
   commandClozeSeqName: "填空題轉換：標記依序轉成 {{c1::…}}、{{c2::…}}…（挖空答案按順序出現）",
   commandClozeRestoreName: "填空題轉換：將挖空標記還原為原始標記",

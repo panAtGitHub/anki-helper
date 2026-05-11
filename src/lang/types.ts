@@ -63,6 +63,7 @@ export interface LocaleText {
   silentScheduledBatchDesc: string;
   commandInsertName: string;
   commandBatchInsertName: string;
+  commandRemoveHeadingBacklinksName: string;
   commandClozeOneName: string;
   commandClozeSeqName: string;
   commandClozeRestoreName: string;

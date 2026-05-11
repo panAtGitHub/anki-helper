@@ -77,6 +77,22 @@ export default class AnkiHelperPlugin extends Plugin {
         void this.executeBatchProcess("manual");
       },
     });
+    this.addCommand({
+      id: "remove-heading-backlinks",
+      name: locale.commandRemoveHeadingBacklinksName,
+      callback: () => {
+        const file = this.getActiveFile();
+        if (!file) {
+          new Notice(locale.noticeNoActiveFile);
+          return;
+        }
+        if (file.extension !== "md") {
+          new Notice(locale.noticeNotMarkdown);
+          return;
+        }
+        void this.removeHeadingBacklinks(file);
+      },
+    });
 
     this.addCommand({
       id: "cloze-one",
@@ -135,6 +151,20 @@ export default class AnkiHelperPlugin extends Plugin {
         changed = this.tidyLists(lines, cache) || changed;
       }
 
+      return changed ? lines.join("\n") : raw;
+    });
+  }
+
+  private async removeHeadingBacklinks(file: TFile, options?: { skipScopeCheck?: boolean }): Promise<void> {
+    if (!options?.skipScopeCheck && !this.isInScope(file)) {
+      new Notice(this.getLocaleText().noticeSkippedScope);
+      return;
+    }
+
+    await this.app.vault.process(file, (raw) => {
+      const lines = raw.split(/\r?\n/);
+      const cache = this.app.metadataCache.getFileCache(file);
+      const changed = this.removeHeadingBacklinksInLines(lines, file, cache);
       return changed ? lines.join("\n") : raw;
     });
   }
@@ -315,6 +345,46 @@ export default class AnkiHelperPlugin extends Plugin {
         changed = true;
       } else if (lines[j].trim() !== backlink) {
         lines[j] = backlink;
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  private removeHeadingBacklinksInLines(lines: string[], file: TFile, cache?: CachedMetadata | null): boolean {
+    let changed = false;
+    const qaLvl = this.settings.headingLevel ?? 4;
+    const clozeLvl = this.settings.clozeHeadingLevel ?? 5;
+    const prefixes = new Set<string>(["#".repeat(qaLvl) + " ", "#".repeat(clozeLvl) + " "]);
+    const noteName = file.basename;
+    const start = this.getContentStartLine(lines, cache);
+
+    const rawChars = this.settings.headingRemoveChars.trim() || "` < > [ ]";
+    const tokens = rawChars.split(/\s+/).filter(Boolean);
+    const pattern = tokens.length ? tokens.map(escapeRegExp).join("|") : "`|<|>|\\[|\\]";
+    const removeRegex = new RegExp(pattern, "g");
+
+    for (let i = start; i < lines.length; i++) {
+      const line = lines[i];
+
+      let hPrefix: string | null = null;
+      for (const p of prefixes) {
+        if (line.startsWith(p)) {
+          hPrefix = p;
+          break;
+        }
+      }
+      if (!hPrefix) continue;
+
+      const rawHeading = line.slice(hPrefix.length);
+      const cleanHeading = rawHeading.replace(removeRegex, "").trim();
+      const backlink = `[[${noteName}#${cleanHeading}]]`;
+
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === "") j++;
+      if (j < lines.length && lines[j].trim() === backlink) {
+        lines.splice(j, 1);
         changed = true;
       }
     }

@@ -72,6 +72,7 @@ const en: LocaleText = {
     "Only affects scheduled batch runs. When enabled, successful runs and empty runs stay silent; only failures show a notice. Manual batch runs still show summaries.",
   commandInsertName: "Insert deck & backlink",
   commandBatchInsertName: "Batch process all in-scope files: insert deck & backlink",
+  commandRemoveHeadingBacklinksName: "Remove heading backlinks",
   commandClozeOneName: "Cloze: convert markers → {{c1::…}} (answers appear simultaneously)",
   commandClozeSeqName: "Cloze: convert markers → {{c1::…}}, {{c2::…}}… (answers appear sequentially)",
   commandClozeRestoreName: "Cloze: restore {{cN::…}} → markers",
